@@ -43,7 +43,7 @@
                   "model": {
                     "type": "string",
                     "description": "Model name ,default is chirp-auk-turbo",
-                    "example": "chirp-auk-turbo|chirp-v4"
+                    "example": "chirp-auk-turbo"
                   },
                   "wait_audio": {
                     "type": "boolean",
@@ -102,7 +102,7 @@
                   "model": {
                     "type": "string",
                     "description": "Model name ,default is chirp-auk-turbo",
-                    "example": "chirp-auk-turbo|chirp-v4"
+                    "example": "chirp-auk-turbo"
                   },
                   "wait_audio": {
                     "type": "boolean",
