@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ensureLoaded, getAccountById, updateAccountCredits } from '@/lib/accountStore';
+import { ensureLoaded, getAccountById, updateAccountCredits, AccountCredits } from '@/lib/accountStore';
 import { sunoApi } from '@/lib/SunoApi';
 import { corsHeaders } from '@/lib/utils';
 
@@ -18,7 +18,7 @@ export async function POST(
 
   try {
     const api = await sunoApi(params.id);
-    const credits = await api.get_credits();
+    const credits = await api.get_credits() as AccountCredits;
     await updateAccountCredits(params.id, credits);
     return NextResponse.json(credits, { headers: corsHeaders });
   } catch (error) {

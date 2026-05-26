@@ -466,6 +466,7 @@ export default function AdminPage() {
                       className="flex items-center gap-4 p-3 border border-gray-100 rounded-xl hover:bg-gray-50 transition"
                     >
                       {song.image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={song.image_url}
                           alt=""
