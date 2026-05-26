@@ -289,9 +289,23 @@ class SunoApi {
       sameSite: lax
     });
     for (const key in this.cookies) {
+      const raw = this.cookies[key];
+      if (raw === undefined || raw === '') continue;
+      // Playwright 不接受含特殊字符的原始值，先做 encodeURIComponent 保护
+      let value: string;
+      try {
+        // 如果已经是编码过的值，decodeURIComponent 不会抛错；直接 encode 防止二次编码
+        value = raw + '';
+        // 检测是否含 Playwright 不接受的字符，若有则编码
+        if (/[\x00-\x1F\x7F ",;\\]/.test(value)) {
+          value = encodeURIComponent(value);
+        }
+      } catch {
+        value = encodeURIComponent(raw + '');
+      }
       cookies.push({
         name: key,
-        value: this.cookies[key]+'',
+        value,
         domain: '.suno.com',
         path: '/',
         sameSite: lax
