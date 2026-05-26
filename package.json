@@ -19,7 +19,7 @@
     "@playwright/browser-chromium": "^1.49.1",
     "@vercel/analytics": "^1.2.2",
     "axios": "^1.7.8",
-    "better-sqlite3": "^12.10.0",
+    "better-sqlite3": "^9.6.0",
     "bufferutil": "^4.0.8",
     "chromium-bidi": "^0.10.1",
     "cookie": "^1.0.2",
