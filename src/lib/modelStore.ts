@@ -15,7 +15,7 @@ export interface SunoModel {
 }
 
 export interface ModelSnapshot {
-  updatedAt: string;    // ISO8601
+  updatedAt: string;
   models: SunoModel[];
 }
 
@@ -39,7 +39,7 @@ function rowToModel(row: ModelRow): SunoModel {
     id: row.model_id,
     name: row.name,
     external_key: row.external_key,
-    major_version: row.major_version,
+    major_version: row.major_version as number,
     description: row.description,
     is_default_free_model: row.is_default_free_model === 1,
     is_default_model: row.is_default_model === 1,
@@ -50,15 +50,14 @@ function rowToModel(row: ModelRow): SunoModel {
   };
 }
 
-// 保留空实现，兼容旧调用方
 export async function loadModels(): Promise<void> {
-  getDb();
+  await getDb();
 }
 
-export function getModelsSnapshot(): ModelSnapshot {
-  const db = getDb();
+export async function getModelsSnapshot(): Promise<ModelSnapshot> {
+  const db = await getDb();
   const rows = db.prepare('SELECT * FROM models').all() as ModelRow[];
-  const kvRow = db.prepare("SELECT value FROM kv WHERE key = 'models_updated_at'").get() as { value: string } | undefined;
+  const kvRow = db.prepare("SELECT value FROM kv WHERE key = ?").get(['models_updated_at']) as { value: string } | undefined;
   return {
     updatedAt: kvRow?.value ?? '',
     models: rows.map(rowToModel),
@@ -66,10 +65,10 @@ export function getModelsSnapshot(): ModelSnapshot {
 }
 
 export async function saveModels(rawModels: any[]): Promise<{ added: string[]; removed: string[] }> {
-  const db = getDb();
+  const db = await getDb();
   const now = new Date().toISOString();
 
-  const prev = (db.prepare('SELECT external_key, name FROM models').all() as { external_key: string; name: string }[]);
+  const prev = db.prepare('SELECT external_key, name FROM models').all() as { external_key: string; name: string }[];
   const prevKeys = new Set(prev.map(m => m.external_key));
 
   const next: SunoModel[] = rawModels.map(m => ({
@@ -90,39 +89,28 @@ export async function saveModels(rawModels: any[]): Promise<{ added: string[]; r
   const added = next.filter(m => !prevKeys.has(m.external_key)).map(m => m.name);
   const removed = prev.filter(m => !nextKeys.has(m.external_key)).map(m => m.name);
 
-  const upsert = db.prepare(`
+  const upsertSql = `
     INSERT INTO models (external_key, model_id, name, major_version, description,
       is_default_free_model, is_default_model, can_use, badges, capabilities, features, updated_at)
     VALUES (@external_key, @model_id, @name, @major_version, @description,
       @is_default_free_model, @is_default_model, @can_use, @badges, @capabilities, @features, @updated_at)
     ON CONFLICT(external_key) DO UPDATE SET
-      model_id = excluded.model_id,
-      name = excluded.name,
-      major_version = excluded.major_version,
-      description = excluded.description,
+      model_id = excluded.model_id, name = excluded.name,
+      major_version = excluded.major_version, description = excluded.description,
       is_default_free_model = excluded.is_default_free_model,
-      is_default_model = excluded.is_default_model,
-      can_use = excluded.can_use,
-      badges = excluded.badges,
-      capabilities = excluded.capabilities,
-      features = excluded.features,
-      updated_at = excluded.updated_at
-  `);
-
-  const deleteOld = db.prepare('DELETE FROM models WHERE external_key = ?');
-  const upsertKv = db.prepare(`
-    INSERT INTO kv (key, value) VALUES ('models_updated_at', @value)
-    ON CONFLICT(key) DO UPDATE SET value = excluded.value
-  `);
+      is_default_model = excluded.is_default_model, can_use = excluded.can_use,
+      badges = excluded.badges, capabilities = excluded.capabilities,
+      features = excluded.features, updated_at = excluded.updated_at
+  `;
 
   db.transaction(() => {
-    // 删除已移除的
     for (const m of prev) {
-      if (!nextKeys.has(m.external_key)) deleteOld.run(m.external_key);
+      if (!nextKeys.has(m.external_key)) {
+        db.prepare('DELETE FROM models WHERE external_key = ?').run([m.external_key]);
+      }
     }
-    // 插入/更新
     for (const m of next) {
-      upsert.run({
+      db.prepare(upsertSql).run({
         external_key: m.external_key,
         model_id: m.id,
         name: m.name,
@@ -137,7 +125,10 @@ export async function saveModels(rawModels: any[]): Promise<{ added: string[]; r
         updated_at: now,
       });
     }
-    upsertKv.run({ value: now });
+    db.prepare(`
+      INSERT INTO kv (key, value) VALUES ('models_updated_at', @value)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `).run({ value: now });
   })();
 
   return { added, removed };

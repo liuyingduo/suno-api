@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET() {
   await loadModels();
-  const snapshot = getModelsSnapshot();
+  const snapshot = await getModelsSnapshot();
   return NextResponse.json(snapshot, { headers: corsHeaders });
 }
 
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const snapshot = getModelsSnapshot();
+  const snapshot = await getModelsSnapshot();
   return NextResponse.json(
     { ...snapshot, diff },
     { headers: corsHeaders }

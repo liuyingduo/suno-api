@@ -25,7 +25,7 @@ function msUntilNextRunUTC(): number {
 
 export async function fetchAndSaveModels(): Promise<{ added: string[]; removed: string[] } | null> {
   await ensureLoaded();
-  const account = pickAccount();
+  const account = await pickAccount();
   if (!account) {
     logger.warn('[Scheduler] 无可用账号，跳过模型更新');
     return null;

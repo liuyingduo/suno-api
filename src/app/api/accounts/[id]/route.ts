@@ -17,7 +17,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   await ensureLoaded();
-  const account = getAccountById(params.id);
+  const account = await getAccountById(params.id);
   if (!account) {
     return NextResponse.json({ error: '账号不存在' }, { status: 404, headers: corsHeaders });
   }
@@ -30,7 +30,7 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   await ensureLoaded();
-  const account = getAccountById(params.id);
+  const account = await getAccountById(params.id);
   if (!account) {
     return NextResponse.json({ error: '账号不存在' }, { status: 404, headers: corsHeaders });
   }

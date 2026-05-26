@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 /** GET /api/accounts — 获取所有账号列表 */
 export async function GET() {
   await ensureLoaded();
-  const accounts = getAccounts().map(a => ({
+  const accounts = (await getAccounts()).map(a => ({
     ...a,
     cookie: a.cookie.slice(0, 30) + '...', // 隐藏完整 cookie，仅展示前缀
   }));

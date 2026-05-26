@@ -885,7 +885,7 @@ class SunoApi {
 
 export const sunoApi = async (accountId?: string) => {
   await ensureLoaded();
-  const account = accountId ? getAccountById(accountId) : pickAccount();
+  const account = accountId ? await getAccountById(accountId) : await pickAccount();
   if (!account) {
     throw new Error(
       accountId

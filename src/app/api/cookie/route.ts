@@ -14,7 +14,7 @@ const LEGACY_EMAIL = 'legacy@suno-api.local';
 
 export async function GET() {
   await ensureLoaded();
-  const accounts = getAccounts();
+  const accounts = await getAccounts();
   const configured = accounts.length > 0;
   return NextResponse.json(
     { configured, deprecated: true, message: '请使用 /api/accounts 和 /admin 管理账号' },
