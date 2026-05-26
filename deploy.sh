@@ -113,7 +113,7 @@ case "$CMD" in
     stop)    do_stop;   green "已停止。" ;;
     status)  do_status ;;
     logs)    do_logs ;;
-    restart) do_stop; do_start ;;
+    restart) do_stop; do_build; do_start ;;
     deploy)  do_build; do_start ;;
     *)
         echo "未知命令: $CMD"
