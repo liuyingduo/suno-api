@@ -9,6 +9,7 @@ const nextConfig = {
   },
   experimental: {
     serverMinification: false, // the server minification unfortunately breaks the selector class names
+    instrumentationHook: true, // 启用服务器启动钩子，用于初始化定时任务
   },
 };  
 

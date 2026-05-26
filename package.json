@@ -19,6 +19,7 @@
     "@playwright/browser-chromium": "^1.49.1",
     "@vercel/analytics": "^1.2.2",
     "axios": "^1.7.8",
+    "better-sqlite3": "^12.10.0",
     "bufferutil": "^4.0.8",
     "chromium-bidi": "^0.10.1",
     "cookie": "^1.0.2",
@@ -41,6 +42,7 @@
   },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.12",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/js-cookie": "^3.0.6",
     "@types/node": "^20",
     "@types/react": "^18",

@@ -19,7 +19,7 @@ export const cache = globalForSunoApi.sunoApiCache || new Map<string, SunoApi>()
 globalForSunoApi.sunoApiCache = cache;
 
 const logger = pino();
-export const DEFAULT_MODEL = 'chirp-v3-5';
+export const DEFAULT_MODEL = 'chirp-v4';
 
 export interface AudioInfo {
   id: string; // Unique identifier for the audio
@@ -854,6 +854,14 @@ class SunoApi {
       monthly_limit: response.data.monthly_limit,
       monthly_usage: response.data.monthly_usage
     };
+  }
+
+  public async getModels(): Promise<any[]> {
+    await this.keepAlive(false);
+    const response = await this.client.get(
+      `${SunoApi.BASE_URL}/api/billing/info/`
+    );
+    return response.data.models ?? [];
   }
 
   public async getPersonaPaginated(personaId: string, page: number = 1): Promise<PersonaResponse> {
