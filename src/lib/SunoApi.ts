@@ -68,7 +68,7 @@ interface PersonaResponse {
 }
 
 class SunoApi {
-  private static BASE_URL: string = 'https://studio-api.prod.suno.com';
+  private static BASE_URL: string = 'https://studio-api-prod.suno.com';
   private static CLERK_BASE_URL: string = 'https://auth.suno.com';
   private static CLERK_VERSION = '5.117.0';
 
@@ -412,7 +412,7 @@ class SunoApi {
       throw e;
     });
     return (new Promise((resolve, reject) => {
-      page.route('**/api/generate/v2/**', async (route: any) => {
+      page.route('**/api/generate/v2-web/**', async (route: any) => {
         try {
           logger.info('hCaptcha token received. Closing browser');
           route.abort();
@@ -558,6 +558,9 @@ class SunoApi {
     continue_at?: number
   ): Promise<AudioInfo[]> {
     await this.keepAlive();
+    const browserToken = JSON.stringify({
+      token: Buffer.from(JSON.stringify({ timestamp: Date.now() })).toString('base64')
+    });
     const payload: any = {
       make_instrumental: make_instrumental,
       mv: model || DEFAULT_MODEL,
@@ -565,8 +568,27 @@ class SunoApi {
       generation_type: 'TEXT',
       continue_at: continue_at,
       continue_clip_id: continue_clip_id,
+      continued_aligned_prompt: null,
       task: task,
-      token: await this.getCaptcha()
+      token: await this.getCaptcha(),
+      token_provider: 1,
+      transaction_uuid: randomUUID(),
+      user_uploaded_images_b64: null,
+      cover_clip_id: null,
+      cover_start_s: null,
+      cover_end_s: null,
+      persona_id: null,
+      artist_clip_id: null,
+      artist_start_s: null,
+      artist_end_s: null,
+      override_fields: [],
+      metadata: {
+        web_client_pathname: '/create',
+        is_max_mode: false,
+        create_mode: isCustom ? 'custom' : 'simple',
+        disable_volume_normalization: false,
+        lyrics_model: 'default'
+      }
     };
     if (isCustom) {
       payload.tags = tags;
@@ -594,10 +616,11 @@ class SunoApi {
         )
     );
     const response = await this.client.post(
-      `${SunoApi.BASE_URL}/api/generate/v2/`,
+      `${SunoApi.BASE_URL}/api/generate/v2-web/`,
       payload,
       {
-        timeout: 10000 // 10 seconds timeout
+        timeout: 10000, // 10 seconds timeout
+        headers: { 'browser-token': browserToken }
       }
     );
     if (response.status !== 200) {
@@ -768,17 +791,19 @@ class SunoApi {
     page?: string | null
   ): Promise<AudioInfo[]> {
     await this.keepAlive(false);
-    let url = new URL(`${SunoApi.BASE_URL}/api/feed/v2`);
-    if (songIds) {
-      url.searchParams.append('ids', songIds.join(','));
+    const browserToken = JSON.stringify({ token: Buffer.from(JSON.stringify({ timestamp: Date.now() })).toString('base64') });
+    const url = `${SunoApi.BASE_URL}/api/feed/v3`;
+    const body: any = {};
+    if (songIds && songIds.length > 0) {
+      body.filters = { ids: { presence: 'True', clipIds: songIds } };
+      body.limit = songIds.length;
+    } else if (page) {
+      body.page = page;
     }
-    if (page) {
-      url.searchParams.append('page', page);
-    }
-    logger.info('Get audio status: ' + url.href);
-    const response = await this.client.get(url.href, {
-      // 10 seconds timeout
-      timeout: 10000
+    logger.info('Get audio status: ' + url + ' body: ' + JSON.stringify(body));
+    const response = await this.client.post(url, body, {
+      timeout: 10000,
+      headers: { 'browser-token': browserToken }
     });
 
     const audios = response.data.clips;
