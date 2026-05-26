@@ -11,10 +11,11 @@ import { BrowserContext, Page, Locator, chromium, firefox } from 'rebrowser-play
 import { createCursor, Cursor } from 'ghost-cursor-playwright';
 import { promises as fs } from 'fs';
 import path from 'node:path';
+import { ensureLoaded, getAccountById, pickAccount } from '@/lib/accountStore';
 
 // sunoApi instance caching
 const globalForSunoApi = global as unknown as { sunoApiCache?: Map<string, SunoApi> };
-const cache = globalForSunoApi.sunoApiCache || new Map<string, SunoApi>();
+export const cache = globalForSunoApi.sunoApiCache || new Map<string, SunoApi>();
 globalForSunoApi.sunoApiCache = cache;
 
 const logger = pino();
@@ -874,22 +875,21 @@ class SunoApi {
   }
 }
 
-export const sunoApi = async (cookie?: string) => {
-  const resolvedCookie = cookie && cookie.includes('__client') ? cookie : process.env.SUNO_COOKIE; // Check for bad `Cookie` header (It's too expensive to actually parse the cookies *here*)
-  if (!resolvedCookie) {
-    logger.info('No cookie provided! Aborting...\nPlease provide a cookie either in the .env file or in the Cookie header of your request.')
-    throw new Error('Please provide a cookie either in the .env file or in the Cookie header of your request.');
+export const sunoApi = async (accountId?: string) => {
+  await ensureLoaded();
+  const account = accountId ? getAccountById(accountId) : pickAccount();
+  if (!account) {
+    throw new Error(
+      accountId
+        ? `账号 ${accountId} 不存在。`
+        : '未配置账号，请先通过管理页面 /admin 或 POST /api/accounts 接口添加账号。'
+    );
   }
 
-  // Check if the instance for this cookie already exists in the cache
-  const cachedInstance = cache.get(resolvedCookie);
-  if (cachedInstance)
-    return cachedInstance;
+  const cached = cache.get(account.id);
+  if (cached) return cached;
 
-  // If not, create a new instance and initialize it
-  const instance = await new SunoApi(resolvedCookie).init();
-  // Cache the initialized instance
-  cache.set(resolvedCookie, instance);
-
+  const instance = await new SunoApi(account.cookie).init();
+  cache.set(account.id, instance);
   return instance;
 };
