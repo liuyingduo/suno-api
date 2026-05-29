@@ -165,6 +165,15 @@ class SunoApi {
     }
     // Save session ID for later use
     this.sid = sessionResponse.data.response.last_active_session_id;
+    // Also extract the initial JWT token from the response
+    const sessions = sessionResponse.data.response.sessions;
+    if (Array.isArray(sessions) && sessions.length > 0) {
+      const jwt = sessions[0]?.last_active_token?.jwt;
+      if (jwt) {
+        this.currentToken = jwt;
+        logger.info('Initial token extracted from /v1/client response');
+      }
+    }
   }
 
   /**
@@ -175,17 +184,33 @@ class SunoApi {
     if (!this.sid) {
       throw new Error('Session ID is not set. Cannot renew token.');
     }
-    // URL to renew session token
-    const renewUrl = `${SunoApi.CLERK_BASE_URL}/v1/client/sessions/${this.sid}/tokens?__clerk_api_version=2025-11-10&_clerk_js_version=${SunoApi.CLERK_VERSION}`;
-    // Renew session token
     logger.info('KeepAlive...\n');
-    const renewResponse = await this.client.post(renewUrl, {}, {
-      headers: { Authorization: this.cookies.__client }
-    });
+    let newToken: string | undefined;
+    // First try the /tokens endpoint
+    try {
+      const renewUrl = `${SunoApi.CLERK_BASE_URL}/v1/client/sessions/${this.sid}/tokens?__clerk_api_version=2025-11-10&_clerk_js_version=${SunoApi.CLERK_VERSION}`;
+      const renewResponse = await this.client.post(renewUrl, {}, {
+        headers: { Authorization: this.cookies.__client }
+      });
+      newToken = renewResponse.data.jwt;
+    } catch (e) {
+      // Fallback: re-fetch from /v1/client which also returns the token
+      logger.info('Falling back to /v1/client for token refresh');
+      const getSessionUrl = `${SunoApi.CLERK_BASE_URL}/v1/client?__clerk_api_version=2025-11-10&_clerk_js_version=${SunoApi.CLERK_VERSION}`;
+      const sessionResponse = await this.client.get(getSessionUrl, {
+        headers: { Authorization: this.cookies.__client }
+      });
+      const sessions = sessionResponse.data?.response?.sessions;
+      if (Array.isArray(sessions) && sessions.length > 0) {
+        newToken = sessions[0]?.last_active_token?.jwt;
+      }
+    }
+    if (!newToken) {
+      throw new Error('Failed to refresh token');
+    }
     if (isWait) {
       await sleep(1, 2);
     }
-    const newToken = renewResponse.data.jwt;
     // Update Authorization field in request header with the new JWT token
     this.currentToken = newToken;
   }
