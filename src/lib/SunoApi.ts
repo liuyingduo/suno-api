@@ -101,7 +101,7 @@ class SunoApi {
       }
     });
     this.client.interceptors.request.use(config => {
-      if (this.currentToken && !config.headers.Authorization)
+      if (this.currentToken && !config.headers.Authorization && !this.isClerkRequest(config.url))
         config.headers.Authorization = `Bearer ${this.currentToken}`;
       const cookiesArray = Object.entries(this.cookies).map(([key, value]) => 
         cookie.serialize(key, value as string)
@@ -152,9 +152,7 @@ class SunoApi {
    */
   private async getAuthToken() {
     logger.info('Getting the session ID');
-    // URL to get session ID
-    const getSessionUrl = `${SunoApi.CLERK_BASE_URL}/v1/client?__clerk_api_version=2025-11-10&_clerk_js_version=${SunoApi.CLERK_VERSION}`;
-    // Get session ID
+    const getSessionUrl = this.buildClerkUrl('/v1/client');
     const sessionResponse = await this.client.get(getSessionUrl, {
       headers: { Authorization: this.cookies.__client }
     });
@@ -163,17 +161,13 @@ class SunoApi {
         'Failed to get session id, you may need to update the SUNO_COOKIE'
       );
     }
-    // Save session ID for later use
-    this.sid = sessionResponse.data.response.last_active_session_id;
-    // Also extract the initial JWT token from the response
-    const sessions = sessionResponse.data.response.sessions;
-    if (Array.isArray(sessions) && sessions.length > 0) {
-      const jwt = sessions[0]?.last_active_token?.jwt;
-      if (jwt) {
-        this.currentToken = jwt;
-        logger.info('Initial token extracted from /v1/client response');
-      }
+    const sessionId = sessionResponse.data.response.last_active_session_id;
+    this.sid = sessionId;
+    this.currentToken = this.extractSessionJwt(sessionResponse.data, sessionId);
+    if (!this.currentToken) {
+      throw new Error('Failed to get auth token, you may need to update the SUNO_COOKIE');
     }
+    logger.info('Initial token extracted from /v1/client response');
   }
 
   /**
@@ -185,26 +179,16 @@ class SunoApi {
       throw new Error('Session ID is not set. Cannot renew token.');
     }
     logger.info('KeepAlive...\n');
-    let newToken: string | undefined;
-    // First try the /tokens endpoint
-    try {
-      const renewUrl = `${SunoApi.CLERK_BASE_URL}/v1/client/sessions/${this.sid}/tokens?__clerk_api_version=2025-11-10&_clerk_js_version=${SunoApi.CLERK_VERSION}`;
-      const renewResponse = await this.client.post(renewUrl, {}, {
-        headers: { Authorization: this.cookies.__client }
-      });
-      newToken = renewResponse.data.jwt;
-    } catch (e) {
-      // Fallback: re-fetch from /v1/client which also returns the token
-      logger.info('Falling back to /v1/client for token refresh');
-      const getSessionUrl = `${SunoApi.CLERK_BASE_URL}/v1/client?__clerk_api_version=2025-11-10&_clerk_js_version=${SunoApi.CLERK_VERSION}`;
-      const sessionResponse = await this.client.get(getSessionUrl, {
-        headers: { Authorization: this.cookies.__client }
-      });
-      const sessions = sessionResponse.data?.response?.sessions;
-      if (Array.isArray(sessions) && sessions.length > 0) {
-        newToken = sessions[0]?.last_active_token?.jwt;
+    const touchUrl = this.buildClerkUrl(`/v1/client/sessions/${this.sid}/touch`);
+    const touchResponse = await this.client.post(touchUrl, undefined, {
+      headers: {
+        accept: '*/*',
+        'content-type': 'application/x-www-form-urlencoded',
+        origin: 'https://suno.com',
+        referer: 'https://suno.com/'
       }
-    }
+    });
+    const newToken = this.extractSessionJwt(touchResponse.data, this.sid);
     if (!newToken) {
       throw new Error('Failed to refresh token');
     }
@@ -213,6 +197,31 @@ class SunoApi {
     }
     // Update Authorization field in request header with the new JWT token
     this.currentToken = newToken;
+  }
+
+  private buildClerkUrl(pathname: string): string {
+    const url = new URL(pathname, SunoApi.CLERK_BASE_URL);
+    url.searchParams.set('__clerk_api_version', '2025-11-10');
+    url.searchParams.set('_clerk_js_version', SunoApi.CLERK_VERSION);
+    return url.toString();
+  }
+
+  private isClerkRequest(url?: string): boolean {
+    return Boolean(url?.startsWith(SunoApi.CLERK_BASE_URL));
+  }
+
+  private extractSessionJwt(data: any, sessionId: string): string | undefined {
+    const activeSession = data?.response?.id === sessionId
+      ? data.response
+      : this.findSessionById(data?.response?.sessions ?? data?.client?.sessions, sessionId);
+    return activeSession?.last_active_token?.jwt;
+  }
+
+  private findSessionById(sessions: any, sessionId: string): any {
+    if (!Array.isArray(sessions)) {
+      return undefined;
+    }
+    return sessions.find((session: any) => session?.id === sessionId);
   }
 
   /**
