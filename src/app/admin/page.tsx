@@ -30,6 +30,37 @@ interface Song {
   duration?: string;
 }
 
+interface ActionStats {
+  action: string;
+  total: number;
+  success: number;
+  failed: number;
+  success_rate: number;
+  avg_duration_ms: number;
+}
+
+interface RecentFailure {
+  id: number;
+  request_id: string;
+  action: string;
+  account_id?: string;
+  success: boolean;
+  duration_ms?: number;
+  error?: string;
+  created_at: string;
+}
+
+interface MonitorStats {
+  period: string;
+  total: number;
+  success: number;
+  failed: number;
+  success_rate: number;
+  avg_duration_ms: number;
+  by_action: ActionStats[];
+  recent_failures: RecentFailure[];
+}
+
 export default function AdminPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,6 +76,9 @@ export default function AdminPage() {
   const [addLoading, setAddLoading] = useState(false);
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
   const [updateCookie, setUpdateCookie] = useState('');
+  const [monitorStats, setMonitorStats] = useState<MonitorStats | null>(null);
+  const [monitorHours, setMonitorHours] = useState(24);
+  const [monitorLoading, setMonitorLoading] = useState(false);
 
   const fetchAccounts = useCallback(async () => {
     setLoading(true);
@@ -59,9 +93,24 @@ export default function AdminPage() {
     }
   }, []);
 
+  const fetchMonitorStats = useCallback(async (hours: number) => {
+    setMonitorLoading(true);
+    try {
+      const res = await fetch(`/api/monitor?hours=${hours}`);
+      const data = await res.json();
+      setMonitorStats(data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setMonitorLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchAccounts();
-  }, [fetchAccounts]);
+    fetchMonitorStats(monitorHours);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchAccounts, fetchMonitorStats]);
 
   const handleAddAccount = async () => {
     if (!newEmail.trim() || !newCookie.trim()) {
@@ -331,6 +380,145 @@ export default function AdminPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+        </div>
+
+        {/* 请求监控 */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mt-8">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-50">
+            <h2 className="font-semibold text-gray-700">请求监控</h2>
+            <div className="flex items-center gap-3">
+              <select
+                value={monitorHours}
+                onChange={e => {
+                  const h = Number(e.target.value);
+                  setMonitorHours(h);
+                  fetchMonitorStats(h);
+                }}
+                className="text-sm border border-gray-200 rounded-lg px-2 py-1 outline-none focus:ring-2 focus:ring-blue-400"
+              >
+                <option value={1}>最近 1 小时</option>
+                <option value={6}>最近 6 小时</option>
+                <option value={24}>最近 24 小时</option>
+                <option value={168}>最近 7 天</option>
+                <option value={720}>最近 30 天</option>
+              </select>
+              <button
+                onClick={() => fetchMonitorStats(monitorHours)}
+                className="text-sm text-blue-600 hover:underline"
+              >
+                刷新
+              </button>
+            </div>
+          </div>
+
+          {monitorLoading ? (
+            <div className="p-10 text-center text-gray-400">加载中...</div>
+          ) : !monitorStats ? (
+            <div className="p-10 text-center text-gray-400">暂无数据</div>
+          ) : (
+            <div className="p-5 space-y-6">
+              {/* 总体统计卡片 */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="bg-gray-50 rounded-xl p-4 text-center">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">总请求数</p>
+                  <p className="text-2xl font-bold text-gray-900 mt-1">{monitorStats.total}</p>
+                </div>
+                <div className="bg-green-50 rounded-xl p-4 text-center">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">成功率</p>
+                  <p className="text-2xl font-bold text-green-600 mt-1">
+                    {monitorStats.total === 0 ? '-' : `${monitorStats.success_rate}%`}
+                  </p>
+                </div>
+                <div className="bg-red-50 rounded-xl p-4 text-center">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">失败次数</p>
+                  <p className="text-2xl font-bold text-red-500 mt-1">{monitorStats.failed}</p>
+                </div>
+                <div className="bg-blue-50 rounded-xl p-4 text-center">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">平均响应</p>
+                  <p className="text-2xl font-bold text-blue-600 mt-1">
+                    {monitorStats.avg_duration_ms > 0 ? `${(monitorStats.avg_duration_ms / 1000).toFixed(1)}s` : '-'}
+                  </p>
+                </div>
+              </div>
+
+              {/* 按接口细分 */}
+              {monitorStats.by_action.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-600 mb-3">各接口统计</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="text-left px-4 py-2 text-gray-500 font-medium">接口</th>
+                          <th className="text-right px-4 py-2 text-gray-500 font-medium">总数</th>
+                          <th className="text-right px-4 py-2 text-gray-500 font-medium">成功</th>
+                          <th className="text-right px-4 py-2 text-gray-500 font-medium">失败</th>
+                          <th className="text-right px-4 py-2 text-gray-500 font-medium">成功率</th>
+                          <th className="text-right px-4 py-2 text-gray-500 font-medium">均耗时</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {monitorStats.by_action.map(row => (
+                          <tr key={row.action} className="hover:bg-gray-50/50">
+                            <td className="px-4 py-2.5">
+                              <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">{row.action}</code>
+                            </td>
+                            <td className="px-4 py-2.5 text-right text-gray-700">{row.total}</td>
+                            <td className="px-4 py-2.5 text-right text-green-600">{row.success}</td>
+                            <td className="px-4 py-2.5 text-right text-red-500">{row.failed}</td>
+                            <td className="px-4 py-2.5 text-right">
+                              <span className={`font-medium ${row.success_rate >= 90 ? 'text-green-600' : row.success_rate >= 70 ? 'text-yellow-600' : 'text-red-500'}`}>
+                                {row.success_rate}%
+                              </span>
+                            </td>
+                            <td className="px-4 py-2.5 text-right text-gray-500 text-xs">
+                              {row.avg_duration_ms > 0 ? `${(row.avg_duration_ms / 1000).toFixed(1)}s` : '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* 最近失败记录 */}
+              {monitorStats.recent_failures.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-600 mb-3">最近失败记录</h3>
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {monitorStats.recent_failures.map(log => (
+                      <div key={log.id} className="flex items-start gap-3 p-3 bg-red-50 rounded-lg border border-red-100 text-xs">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <code className="bg-red-100 px-1.5 py-0.5 rounded text-red-700">{log.action}</code>
+                            {log.account_id && (
+                              <span className="text-gray-400">账号: {log.account_id.slice(0, 8)}...</span>
+                            )}
+                            {log.duration_ms !== undefined && (
+                              <span className="text-gray-400">{(log.duration_ms / 1000).toFixed(1)}s</span>
+                            )}
+                          </div>
+                          {log.error && (
+                            <p className="text-red-600 mt-1 break-all">{log.error}</p>
+                          )}
+                        </div>
+                        <span className="text-gray-400 whitespace-nowrap flex-shrink-0">
+                          {new Date(log.created_at).toLocaleString('zh-CN')}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {monitorStats.total === 0 && (
+                <div className="text-center text-gray-400 py-4">
+                  该时段内暂无请求记录
+                </div>
+              )}
             </div>
           )}
         </div>

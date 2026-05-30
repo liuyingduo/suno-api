@@ -139,6 +139,20 @@ async function _initDb(): Promise<Db> {
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS request_logs (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_id  TEXT NOT NULL,
+      action      TEXT NOT NULL,
+      account_id  TEXT,
+      success     INTEGER NOT NULL,
+      duration_ms INTEGER,
+      error       TEXT,
+      created_at  TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_request_logs_created_at ON request_logs(created_at);
+    CREATE INDEX IF NOT EXISTS idx_request_logs_action ON request_logs(action);
   `);
 
   return db;

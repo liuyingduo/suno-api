@@ -5,6 +5,7 @@ import { sleep } from '@/lib/utils';
 import * as cookie from 'cookie';
 import { randomUUID } from 'node:crypto';
 import { ensureLoaded, getAccountById, pickAccount } from '@/lib/accountStore';
+import { recordRequest } from '@/lib/requestMonitor';
 
 // sunoApi instance caching
 const globalForSunoApi = global as unknown as { sunoApiCache?: Map<string, SunoApi> };
@@ -72,8 +73,10 @@ class SunoApi {
   private deviceId?: string;
   private userAgent?: string;
   private cookies: Record<string, string | undefined>;
+  private accountId?: string;
 
-  constructor(cookies: string) {
+  constructor(cookies: string, accountId?: string) {
+    this.accountId = accountId;
     this.userAgent = new UserAgent(/Macintosh/).random().toString(); // Usually Mac systems get less amount of CAPTCHAs
     this.cookies = cookie.parse(cookies);
     this.deviceId = this.cookies.ajs_anonymous_id || randomUUID();
@@ -243,19 +246,25 @@ class SunoApi {
   ): Promise<AudioInfo[]> {
     await this.keepAlive(false);
     const startTime = Date.now();
-    const audios = await this.generateSongs(
-      prompt,
-      false,
-      undefined,
-      undefined,
-      make_instrumental,
-      model,
-      wait_audio
-    );
-    const costTime = Date.now() - startTime;
-    logger.info('Generate Response:\n' + JSON.stringify(audios, null, 2));
-    logger.info('Cost time: ' + costTime);
-    return audios;
+    try {
+      const audios = await this.generateSongs(
+        prompt,
+        false,
+        undefined,
+        undefined,
+        make_instrumental,
+        model,
+        wait_audio
+      );
+      const costTime = Date.now() - startTime;
+      logger.info('Generate Response:\n' + JSON.stringify(audios, null, 2));
+      logger.info('Cost time: ' + costTime);
+      await recordRequest('generate', this.accountId, true, costTime);
+      return audios;
+    } catch (e: any) {
+      await recordRequest('generate', this.accountId, false, Date.now() - startTime, e?.message);
+      throw e;
+    }
   }
 
   /**
@@ -267,18 +276,24 @@ class SunoApi {
   public async concatenate(clip_id: string): Promise<AudioInfo> {
     await this.keepAlive(false);
     const payload: any = { clip_id: clip_id };
-
-    const response = await this.client.post(
-      `${SunoApi.BASE_URL}/api/generate/concat/v2/`,
-      payload,
-      {
-        timeout: 10000 // 10 seconds timeout
+    const startTime = Date.now();
+    try {
+      const response = await this.client.post(
+        `${SunoApi.BASE_URL}/api/generate/concat/v2/`,
+        payload,
+        {
+          timeout: 10000 // 10 seconds timeout
+        }
+      );
+      if (response.status !== 200) {
+        throw new Error('Error response:' + response.statusText);
       }
-    );
-    if (response.status !== 200) {
-      throw new Error('Error response:' + response.statusText);
+      await recordRequest('concatenate', this.accountId, true, Date.now() - startTime);
+      return response.data;
+    } catch (e: any) {
+      await recordRequest('concatenate', this.accountId, false, Date.now() - startTime, e?.message);
+      throw e;
     }
-    return response.data;
   }
 
   /**
@@ -302,22 +317,28 @@ class SunoApi {
     negative_tags?: string
   ): Promise<AudioInfo[]> {
     const startTime = Date.now();
-    const audios = await this.generateSongs(
-      prompt,
-      true,
-      tags,
-      title,
-      make_instrumental,
-      model,
-      wait_audio,
-      negative_tags
-    );
-    const costTime = Date.now() - startTime;
-    logger.info(
-      'Custom Generate Response:\n' + JSON.stringify(audios, null, 2)
-    );
-    logger.info('Cost time: ' + costTime);
-    return audios;
+    try {
+      const audios = await this.generateSongs(
+        prompt,
+        true,
+        tags,
+        title,
+        make_instrumental,
+        model,
+        wait_audio,
+        negative_tags
+      );
+      const costTime = Date.now() - startTime;
+      logger.info(
+        'Custom Generate Response:\n' + JSON.stringify(audios, null, 2)
+      );
+      logger.info('Cost time: ' + costTime);
+      await recordRequest('custom_generate', this.accountId, true, costTime);
+      return audios;
+    } catch (e: any) {
+      await recordRequest('custom_generate', this.accountId, false, Date.now() - startTime, e?.message);
+      throw e;
+    }
   }
 
   /**
@@ -464,26 +485,33 @@ class SunoApi {
    */
   public async generateLyrics(prompt: string): Promise<string> {
     await this.keepAlive(false);
-    // Initiate lyrics generation
-    const generateResponse = await this.client.post(
-      `${SunoApi.BASE_URL}/api/generate/lyrics/`,
-      { prompt }
-    );
-    const generateId = generateResponse.data.id;
+    const startTime = Date.now();
+    try {
+      // Initiate lyrics generation
+      const generateResponse = await this.client.post(
+        `${SunoApi.BASE_URL}/api/generate/lyrics/`,
+        { prompt }
+      );
+      const generateId = generateResponse.data.id;
 
-    // Poll for lyrics completion
-    let lyricsResponse = await this.client.get(
-      `${SunoApi.BASE_URL}/api/generate/lyrics/${generateId}`
-    );
-    while (lyricsResponse?.data?.status !== 'complete') {
-      await sleep(2); // Wait for 2 seconds before polling again
-      lyricsResponse = await this.client.get(
+      // Poll for lyrics completion
+      let lyricsResponse = await this.client.get(
         `${SunoApi.BASE_URL}/api/generate/lyrics/${generateId}`
       );
-    }
+      while (lyricsResponse?.data?.status !== 'complete') {
+        await sleep(2); // Wait for 2 seconds before polling again
+        lyricsResponse = await this.client.get(
+          `${SunoApi.BASE_URL}/api/generate/lyrics/${generateId}`
+        );
+      }
 
-    // Return the generated lyrics text
-    return lyricsResponse.data;
+      await recordRequest('generate_lyrics', this.accountId, true, Date.now() - startTime);
+      // Return the generated lyrics text
+      return lyricsResponse.data;
+    } catch (e: any) {
+      await recordRequest('generate_lyrics', this.accountId, false, Date.now() - startTime, e?.message);
+      throw e;
+    }
   }
 
   /**
@@ -506,7 +534,15 @@ class SunoApi {
     model?: string,
     wait_audio?: boolean
   ): Promise<AudioInfo[]> {
-    return this.generateSongs(prompt, true, tags, title, false, model, wait_audio, negative_tags, 'extend', audioId, continueAt);
+    const startTime = Date.now();
+    try {
+      const result = await this.generateSongs(prompt, true, tags, title, false, model, wait_audio, negative_tags, 'extend', audioId, continueAt);
+      await recordRequest('extend_audio', this.accountId, true, Date.now() - startTime);
+      return result;
+    } catch (e: any) {
+      await recordRequest('extend_audio', this.accountId, false, Date.now() - startTime, e?.message);
+      throw e;
+    }
   }
 
   /**
@@ -516,19 +552,26 @@ class SunoApi {
    */
   public async generateStems(song_id: string): Promise<AudioInfo[]> {
     await this.keepAlive(false);
-    const response = await this.client.post(
-      `${SunoApi.BASE_URL}/api/edit/stems/${song_id}`, {}
-    );
-
-    console.log('generateStems response:\n', response?.data);
-    return response.data.clips.map((clip: any) => ({
-      id: clip.id,
-      status: clip.status,
-      created_at: clip.created_at,
-      title: clip.title,
-      stem_from_id: clip.metadata.stem_from_id,
-      duration: clip.metadata.duration
-    }));
+    const startTime = Date.now();
+    try {
+      const response = await this.client.post(
+        `${SunoApi.BASE_URL}/api/edit/stems/${song_id}`, {}
+      );
+      console.log('generateStems response:\n', response?.data);
+      const result = response.data.clips.map((clip: any) => ({
+        id: clip.id,
+        status: clip.status,
+        created_at: clip.created_at,
+        title: clip.title,
+        stem_from_id: clip.metadata.stem_from_id,
+        duration: clip.metadata.duration
+      }));
+      await recordRequest('generate_stems', this.accountId, true, Date.now() - startTime);
+      return result;
+    } catch (e: any) {
+      await recordRequest('generate_stems', this.accountId, false, Date.now() - startTime, e?.message);
+      throw e;
+    }
   }
 
 
@@ -539,16 +582,23 @@ class SunoApi {
    */
   public async getLyricAlignment(song_id: string): Promise<object> {
     await this.keepAlive(false);
-    const response = await this.client.get(`${SunoApi.BASE_URL}/api/gen/${song_id}/aligned_lyrics/v2/`);
-
-    console.log(`getLyricAlignment ~ response:`, response.data);
-    return response.data?.aligned_words.map((transcribedWord: any) => ({
-      word: transcribedWord.word,
-      start_s: transcribedWord.start_s,
-      end_s: transcribedWord.end_s,
-      success: transcribedWord.success,
-      p_align: transcribedWord.p_align
-    }));
+    const startTime = Date.now();
+    try {
+      const response = await this.client.get(`${SunoApi.BASE_URL}/api/gen/${song_id}/aligned_lyrics/v2/`);
+      console.log(`getLyricAlignment ~ response:`, response.data);
+      const result = response.data?.aligned_words.map((transcribedWord: any) => ({
+        word: transcribedWord.word,
+        start_s: transcribedWord.start_s,
+        end_s: transcribedWord.end_s,
+        success: transcribedWord.success,
+        p_align: transcribedWord.p_align
+      }));
+      await recordRequest('get_aligned_lyrics', this.accountId, true, Date.now() - startTime);
+      return result;
+    } catch (e: any) {
+      await recordRequest('get_aligned_lyrics', this.accountId, false, Date.now() - startTime, e?.message);
+      throw e;
+    }
   }
 
   /**
@@ -591,11 +641,19 @@ class SunoApi {
       body.page = page;
     }
     logger.info('Get audio status: ' + url + ' body: ' + JSON.stringify(body));
-    const response = await this.client.post(url, body, {
-      timeout: 10000,
-      headers: { 'browser-token': browserToken }
-    });
-
+    const _getStartTime = Date.now();
+    let _getResponse: any;
+    try {
+      _getResponse = await this.client.post(url, body, {
+        timeout: 10000,
+        headers: { 'browser-token': browserToken }
+      });
+    } catch (e: any) {
+      await recordRequest('get', this.accountId, false, Date.now() - _getStartTime, e?.message);
+      throw e;
+    }
+    await recordRequest('get', this.accountId, true, Date.now() - _getStartTime);
+    const response = _getResponse;
     const audios = response.data.clips;
 
     return audios.map((audio: any) => ({
@@ -626,23 +684,37 @@ class SunoApi {
    */
   public async getClip(clipId: string): Promise<object> {
     await this.keepAlive(false);
-    const response = await this.client.get(
-      `${SunoApi.BASE_URL}/api/clip/${clipId}`
-    );
-    return response.data;
+    const startTime = Date.now();
+    try {
+      const response = await this.client.get(
+        `${SunoApi.BASE_URL}/api/clip/${clipId}`
+      );
+      await recordRequest('get_clip', this.accountId, true, Date.now() - startTime);
+      return response.data;
+    } catch (e: any) {
+      await recordRequest('get_clip', this.accountId, false, Date.now() - startTime, e?.message);
+      throw e;
+    }
   }
 
   public async get_credits(): Promise<object> {
     await this.keepAlive(false);
-    const response = await this.client.get(
-      `${SunoApi.BASE_URL}/api/billing/info/`
-    );
-    return {
-      credits_left: response.data.total_credits_left,
-      period: response.data.period,
-      monthly_limit: response.data.monthly_limit,
-      monthly_usage: response.data.monthly_usage
-    };
+    const startTime = Date.now();
+    try {
+      const response = await this.client.get(
+        `${SunoApi.BASE_URL}/api/billing/info/`
+      );
+      await recordRequest('get_credits', this.accountId, true, Date.now() - startTime);
+      return {
+        credits_left: response.data.total_credits_left,
+        period: response.data.period,
+        monthly_limit: response.data.monthly_limit,
+        monthly_usage: response.data.monthly_usage
+      };
+    } catch (e: any) {
+      await recordRequest('get_credits', this.accountId, false, Date.now() - startTime, e?.message);
+      throw e;
+    }
   }
 
   public async getModels(): Promise<any[]> {
@@ -686,7 +758,7 @@ export const sunoApi = async (accountId?: string) => {
   const cached = cache.get(account.id);
   if (cached) return cached;
 
-  const instance = await new SunoApi(account.cookie).init();
+  const instance = await new SunoApi(account.cookie, account.id).init();
   cache.set(account.id, instance);
   return instance;
 };
