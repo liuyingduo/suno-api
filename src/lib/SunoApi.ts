@@ -4,7 +4,7 @@ import pino from 'pino';
 import { sleep } from '@/lib/utils';
 import * as cookie from 'cookie';
 import { randomUUID } from 'node:crypto';
-import { ensureLoaded, getAccountById, pickAccount } from '@/lib/accountStore';
+import { ensureLoaded, getAccountById, pickAccount, updateAccountCookie } from '@/lib/accountStore';
 import { recordRequest } from '@/lib/requestMonitor';
 
 // sunoApi instance caching
@@ -96,18 +96,15 @@ class SunoApi {
     this.client.interceptors.request.use(config => {
       if (this.currentToken && !config.headers.Authorization && !this.isClerkRequest(config.url))
         config.headers.Authorization = `Bearer ${this.currentToken}`;
-      const cookiesArray = Object.entries(this.cookies).map(([key, value]) => 
-        cookie.serialize(key, value as string)
-      );
-      config.headers.Cookie = cookiesArray.join('; ');
+      config.headers.Cookie = this.serializeCookies();
       return config;
     });
-    this.client.interceptors.response.use(resp => {
+    this.client.interceptors.response.use(async resp => {
       const setCookieHeader = resp.headers['set-cookie'];
       if (Array.isArray(setCookieHeader)) {
-        const newCookies = cookie.parse(setCookieHeader.join('; '));
-        for (const [key, value] of Object.entries(newCookies)) {
-          this.cookies[key] = value;
+        const changed = this.mergeSetCookies(setCookieHeader);
+        if (changed && this.accountId && this.isClerkClientRequest(resp.config.url)) {
+          await updateAccountCookie(this.accountId, this.serializeCookies());
         }
       }
       return resp;
@@ -199,8 +196,47 @@ class SunoApi {
     return url.toString();
   }
 
+  private serializeCookies(): string {
+    return Object.entries(this.cookies)
+      .filter(([, value]) => value !== undefined)
+      .map(([key, value]) => cookie.serialize(key, value as string))
+      .join('; ');
+  }
+
+  private mergeSetCookies(setCookieHeaders: string[]): boolean {
+    let changed = false;
+    for (const header of setCookieHeaders) {
+      const pair = this.parseSetCookiePair(header);
+      if (!pair) continue;
+      if (this.cookies[pair.name] !== pair.value) {
+        this.cookies[pair.name] = pair.value;
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  private parseSetCookiePair(setCookieHeader: string): { name: string; value: string } | undefined {
+    const firstPart = setCookieHeader.split(';', 1)[0];
+    const separatorIndex = firstPart.indexOf('=');
+    if (separatorIndex <= 0) {
+      return undefined;
+    }
+    return {
+      name: firstPart.slice(0, separatorIndex),
+      value: firstPart.slice(separatorIndex + 1)
+    };
+  }
+
   private isClerkRequest(url?: string): boolean {
     return Boolean(url?.startsWith(SunoApi.CLERK_BASE_URL));
+  }
+
+  private isClerkClientRequest(url?: string): boolean {
+    if (!url?.startsWith(SunoApi.CLERK_BASE_URL)) {
+      return false;
+    }
+    return new URL(url).pathname === '/v1/client';
   }
 
   private extractSessionJwt(data: any, sessionId: string): string | undefined {
