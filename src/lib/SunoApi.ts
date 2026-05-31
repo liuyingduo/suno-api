@@ -406,8 +406,21 @@ class SunoApi {
   ): Promise<AudioInfo[]> {
     await this.keepAlive();
     const browserToken = JSON.stringify({
-      token: Buffer.from(JSON.stringify({ timestamp: Date.now() })).toString('base64')
+      token: JSON.stringify({ timestamp: Date.now() })
     });
+    // Pre-check: get captcha token before generating
+    let captchaToken: string | null = null;
+    try {
+      const checkResp = await this.client.post(
+        `${SunoApi.BASE_URL}/api/c/check`,
+        { ctype: 'generation' },
+        { headers: { 'browser-token': browserToken } }
+      );
+      captchaToken = checkResp.data?.token ?? null;
+      logger.info('Pre-check captcha token: ' + captchaToken);
+    } catch (e) {
+      logger.warn('Pre-check failed, proceeding without captcha token');
+    }
     const payload: any = {
       make_instrumental: make_instrumental,
       mv: model || DEFAULT_MODEL,
@@ -417,7 +430,7 @@ class SunoApi {
       continue_clip_id: continue_clip_id,
       continued_aligned_prompt: null,
       task: task,
-      token: null,
+      token: captchaToken,
       token_provider: 1,
       transaction_uuid: randomUUID(),
       user_uploaded_images_b64: null,
