@@ -113,7 +113,7 @@ class SunoApi {
 
   public async init(): Promise<SunoApi> {
     //await this.getClerkLatestVersion();
-    await this.getAuthToken();
+    await this.refreshAuth();
     await this.keepAlive();
     return this;
   }
@@ -140,7 +140,7 @@ class SunoApi {
   /**
    * Get the session ID and save it for later use.
    */
-  private async getAuthToken() {
+  public async refreshAuth() {
     logger.info('Getting the session ID');
     const getSessionUrl = this.buildClerkUrl('/v1/client');
     const sessionResponse = await this.client.get(getSessionUrl, {

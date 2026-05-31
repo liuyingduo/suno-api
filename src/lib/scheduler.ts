@@ -1,11 +1,11 @@
 import pino from 'pino';
-import { ensureLoaded, pickAccount } from '@/lib/accountStore';
-import { sunoApi } from '@/lib/SunoApi';
+import { ensureLoaded, getAccounts, pickAccount } from '@/lib/accountStore';
+import { cache, sunoApi } from '@/lib/SunoApi';
 import { loadModels, saveModels } from '@/lib/modelStore';
 
 const logger = pino();
 
-const g = global as unknown as { _sunoSchedulerStarted?: boolean };
+const g = global as unknown as { _sunoSchedulerStarted?: boolean; _sunoAuthRefreshTimer?: ReturnType<typeof setInterval> };
 
 /**
  * 上海时间 08:00 = UTC 00:00
@@ -65,4 +65,22 @@ export function startScheduler(): void {
   };
 
   setTimeout(run, delay);
+
+  // 每 30 分钟刷新一次所有账号的 Clerk session token
+  if (!g._sunoAuthRefreshTimer) {
+    g._sunoAuthRefreshTimer = setInterval(async () => {
+      await ensureLoaded();
+      const accounts = await getAccounts();
+      for (const account of accounts) {
+        const instance = cache.get(account.id);
+        if (!instance) continue;
+        try {
+          await instance.refreshAuth();
+          logger.info(`[Scheduler] 账号 ${account.id} session 已刷新`);
+        } catch (err) {
+          logger.warn(`[Scheduler] 账号 ${account.id} session 刷新失败: ` + err);
+        }
+      }
+    }, 30 * 60 * 1000);
+  }
 }
