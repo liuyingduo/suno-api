@@ -31,6 +31,7 @@ interface CliOptions {
   prompt: string;
   headless: boolean;
   emails: string[];
+  verbose: boolean;
 }
 
 interface AccountResult {
@@ -43,11 +44,16 @@ function parseCliOptions(): CliOptions {
   const emails: string[] = [];
   const promptParts: string[] = [];
   let headless = false;
+  let verbose = false;
 
   for (let i = 2; i < process.argv.length; i++) {
     const arg = process.argv[i];
     if (arg === '--headless') {
       headless = true;
+      continue;
+    }
+    if (arg === '--verbose') {
+      verbose = true;
       continue;
     }
     if (arg === '--email') {
@@ -68,6 +74,7 @@ function parseCliOptions(): CliOptions {
     prompt: promptParts.length > 0 ? promptParts.join(' ') : DEFAULT_PROMPT,
     headless,
     emails,
+    verbose,
   };
 }
 
@@ -77,6 +84,7 @@ function printUsage() {
     '  npx tsx scripts/suno-create.ts "your song prompt here"',
     '  npx tsx scripts/suno-create.ts "your song prompt here" --headless',
     '  npx tsx scripts/suno-create.ts "your song prompt here" --email user@example.com',
+    '  npx tsx scripts/suno-create.ts "your song prompt here" --verbose',
     '',
     'Default: runs all enabled accounts from data/suno.db sequentially.',
   ].join('\n'));
@@ -137,29 +145,37 @@ async function createAccountContext(browser: Browser, account: AccountRow): Prom
   });
 }
 
-function attachNetworkLogging(context: BrowserContext, account: AccountRow) {
+function isGenerateUrl(url: string): boolean {
+  return url.includes('/api/generate') || url.includes('/api/custom_generate');
+}
+
+function isHcaptchaFlowUrl(url: string): boolean {
+  return url.includes('checksiteconfig') || url.includes('/getcaptcha/');
+}
+
+function attachNetworkLogging(context: BrowserContext, account: AccountRow, verbose: boolean) {
   context.on('request', (req) => {
     const url = req.url();
-    const isHcaptcha = url.includes('hcaptcha');
-    const isGenerate = url.includes('studio-api-prod.suno.com') && req.method() === 'POST';
+    const isHcaptcha = isHcaptchaFlowUrl(url);
+    const isGenerate = isGenerateUrl(url) && req.method() === 'POST';
     if (!isHcaptcha && !isGenerate) return;
 
     console.log(`\n[${account.email}] [REQ]`, req.method(), url);
-    if (isHcaptcha) {
+    if (verbose) {
       console.log(`[${account.email}] [REQ headers]`, JSON.stringify(req.headers(), null, 2));
+      const postData = req.postData();
+      if (postData) console.log(`[${account.email}] [REQ body]`, postData);
     }
-    const postData = req.postData();
-    if (postData) console.log(`[${account.email}] [REQ body]`, postData);
   });
 
   context.on('response', async (resp) => {
     const url = resp.url();
-    const isHcaptcha = url.includes('hcaptcha');
-    const isGenerate = url.includes('studio-api-prod.suno.com');
+    const isHcaptcha = isHcaptchaFlowUrl(url);
+    const isGenerate = isGenerateUrl(url);
     if (!isHcaptcha && !isGenerate) return;
 
     console.log(`\n[${account.email}] [RESP]`, resp.status(), url);
-    await logResponseBody(account, resp);
+    if (verbose) await logResponseBody(account, resp);
   });
 }
 
@@ -180,10 +196,15 @@ async function logResponseBody(account: AccountRow, resp: Response) {
   }
 }
 
-async function runAccount(browser: Browser, account: AccountRow, prompt: string): Promise<AccountResult> {
+async function runAccount(
+  browser: Browser,
+  account: AccountRow,
+  prompt: string,
+  verbose: boolean,
+): Promise<AccountResult> {
   console.log(`\n=== Account: ${account.email} (${account.id}) ===`);
   const context = await createAccountContext(browser, account);
-  attachNetworkLogging(context, account);
+  attachNetworkLogging(context, account, verbose);
 
   try {
     const page = await context.newPage();
@@ -260,8 +281,7 @@ async function fillPrompt(
 function waitForGenerateResponse(page: Page): Promise<Response | null> {
   return page.waitForResponse(
     (resp) =>
-      (resp.url().includes('/generate') || resp.url().includes('/custom_generate')) &&
-      resp.status() < 400,
+      isGenerateUrl(resp.url()) && resp.status() < 400,
     { timeout: TIMEOUT },
   ).catch(() => null);
 }
@@ -274,12 +294,6 @@ async function logGenerateResponse(account: AccountRow, genResp: Awaited<ReturnT
 
   console.log(`[${account.email}] Generate API called:`, genResp.url());
   console.log(`[${account.email}] Status:`, genResp.status());
-  try {
-    const body = await genResp.json();
-    console.log(`[${account.email}] Response:`, JSON.stringify(body, null, 2));
-  } catch {
-    console.log(`[${account.email}] non-JSON response body`);
-  }
 }
 
 function printSummary(results: AccountResult[]) {
@@ -298,6 +312,7 @@ async function main() {
 
   console.log('Prompt:', options.prompt);
   console.log('Headless:', options.headless);
+  console.log('Verbose:', options.verbose);
   console.log('Accounts:', accounts.map(a => a.email).join(', '));
 
   const browser = await chromium.launch({
@@ -309,7 +324,7 @@ async function main() {
   const results: AccountResult[] = [];
   try {
     for (const account of accounts) {
-      results.push(await runAccount(browser, account, options.prompt));
+      results.push(await runAccount(browser, account, options.prompt, options.verbose));
     }
   } finally {
     await browser.close();
