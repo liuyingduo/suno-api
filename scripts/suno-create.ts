@@ -5,12 +5,14 @@
  *   npx tsx scripts/suno-create.ts "your song prompt here"
  *   npx tsx scripts/suno-create.ts "your song prompt here" --headless
  *   npx tsx scripts/suno-create.ts "your song prompt here" --email user@example.com
+ *   npx tsx scripts/suno-create.ts "your song prompt here" --keep-open-on-failure
  *
  * 默认遍历 DB 中所有 enabled 账号。每个账号使用独立 browser context。
  */
 import { chromium, type Browser, type BrowserContext, type Page, type Response } from 'playwright';
 import * as cookie from 'cookie';
 import { getDb } from '../src/lib/db';
+import { finishSunoCreateRun, startSunoCreateRun } from '../src/lib/sunoCreateRunStore';
 
 const DEFAULT_PROMPT = 'A chill lo-fi hip hop beat with soft piano and rain sounds';
 const TEXTAREA_XPATH =
@@ -32,6 +34,7 @@ interface CliOptions {
   headless: boolean;
   emails: string[];
   verbose: boolean;
+  keepOpenOnFailure: boolean;
 }
 
 interface AccountResult {
@@ -45,6 +48,7 @@ function parseCliOptions(): CliOptions {
   const promptParts: string[] = [];
   let headless = false;
   let verbose = false;
+  let keepOpenOnFailure = false;
 
   for (let i = 2; i < process.argv.length; i++) {
     const arg = process.argv[i];
@@ -54,6 +58,10 @@ function parseCliOptions(): CliOptions {
     }
     if (arg === '--verbose') {
       verbose = true;
+      continue;
+    }
+    if (arg === '--keep-open-on-failure') {
+      keepOpenOnFailure = true;
       continue;
     }
     if (arg === '--email') {
@@ -75,6 +83,7 @@ function parseCliOptions(): CliOptions {
     headless,
     emails,
     verbose,
+    keepOpenOnFailure,
   };
 }
 
@@ -85,6 +94,7 @@ function printUsage() {
     '  npx tsx scripts/suno-create.ts "your song prompt here" --headless',
     '  npx tsx scripts/suno-create.ts "your song prompt here" --email user@example.com',
     '  npx tsx scripts/suno-create.ts "your song prompt here" --verbose',
+    '  npx tsx scripts/suno-create.ts "your song prompt here" --keep-open-on-failure',
     '',
     'Default: runs all enabled accounts from data/suno.db sequentially.',
   ].join('\n'));
@@ -201,8 +211,10 @@ async function runAccount(
   account: AccountRow,
   prompt: string,
   verbose: boolean,
+  keepOpenOnFailure: boolean,
 ): Promise<AccountResult> {
   console.log(`\n=== Account: ${account.email} (${account.id}) ===`);
+  const runId = await startSunoCreateRun(account.id, account.email);
   const context = await createAccountContext(browser, account);
   attachNetworkLogging(context, account, verbose);
 
@@ -220,11 +232,29 @@ async function runAccount(
 
     const genResp = await generatePromise;
     await logGenerateResponse(account, genResp);
-    await page.waitForTimeout(3000);
-    return { email: account.email, ok: Boolean(genResp) };
+    const ok = Boolean(genResp);
+    await finishSunoCreateRun(
+      runId,
+      ok ? 'success' : 'failed',
+      ok ? 'Generate API response captured' : 'No generate API response captured within timeout',
+      genResp?.url(),
+    );
+    if (!ok && keepOpenOnFailure) {
+      console.log(`[${account.email}] Keeping browser open for inspection. Press Ctrl+C when done.`);
+      await page.waitForTimeout(24 * 60 * 60 * 1000);
+    } else {
+      await page.waitForTimeout(3000);
+    }
+    return { email: account.email, ok };
   } catch (e: any) {
-    console.error(`[${account.email}] Error:`, e?.message ?? e);
-    return { email: account.email, ok: false, error: e?.message ?? String(e) };
+    const message = e?.message ?? String(e);
+    console.error(`[${account.email}] Error:`, message);
+    await finishSunoCreateRun(runId, 'failed', message);
+    if (keepOpenOnFailure) {
+      console.log(`[${account.email}] Keeping browser open after error. Press Ctrl+C when done.`);
+      await context.pages()[0]?.waitForTimeout(24 * 60 * 60 * 1000);
+    }
+    return { email: account.email, ok: false, error: message };
   } finally {
     await context.close();
   }
@@ -313,6 +343,7 @@ async function main() {
   console.log('Prompt:', options.prompt);
   console.log('Headless:', options.headless);
   console.log('Verbose:', options.verbose);
+  console.log('Keep open on failure:', options.keepOpenOnFailure);
   console.log('Accounts:', accounts.map(a => a.email).join(', '));
 
   const browser = await chromium.launch({
@@ -324,7 +355,13 @@ async function main() {
   const results: AccountResult[] = [];
   try {
     for (const account of accounts) {
-      results.push(await runAccount(browser, account, options.prompt, options.verbose));
+      results.push(await runAccount(
+        browser,
+        account,
+        options.prompt,
+        options.verbose,
+        options.keepOpenOnFailure,
+      ));
     }
   } finally {
     await browser.close();

@@ -153,6 +153,22 @@ async function _initDb(): Promise<Db> {
 
     CREATE INDEX IF NOT EXISTS idx_request_logs_created_at ON request_logs(created_at);
     CREATE INDEX IF NOT EXISTS idx_request_logs_action ON request_logs(action);
+
+    CREATE TABLE IF NOT EXISTS suno_create_runs (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id       TEXT NOT NULL,
+      account_id   TEXT NOT NULL,
+      account_email TEXT NOT NULL,
+      status       TEXT NOT NULL,
+      started_at   TEXT NOT NULL,
+      finished_at  TEXT,
+      duration_ms  INTEGER,
+      message      TEXT,
+      generate_url TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_suno_create_runs_started_at ON suno_create_runs(started_at);
+    CREATE INDEX IF NOT EXISTS idx_suno_create_runs_account_id ON suno_create_runs(account_id);
   `);
 
   return db;

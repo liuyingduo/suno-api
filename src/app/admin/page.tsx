@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import SunoCreateRunsPanel from './SunoCreateRunsPanel';
 
 interface AccountCredits {
   credits_left: number;
@@ -383,6 +384,8 @@ export default function AdminPage() {
             </div>
           )}
         </div>
+
+        <SunoCreateRunsPanel />
 
         {/* 请求监控 */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mt-8">
