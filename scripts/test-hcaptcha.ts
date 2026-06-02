@@ -238,10 +238,10 @@ async function solveHsw(
 }
 
 async function main() {
-  // 从数据库读取第一个账户的 cookie
+  // 从数据库读取指定账户的 cookie
   const db = await getDb();
-  const row = db.prepare('SELECT id, email, cookie FROM accounts WHERE enabled = 1 LIMIT 1').get() as any;
-  if (!row) { console.error('No enabled accounts in DB'); process.exit(1); }
+  const row = db.prepare("SELECT id, email, cookie FROM accounts WHERE email = 'xzwthu@gmail.com' LIMIT 1").get() as any;
+  if (!row) { console.error('Account xzwthu@gmail.com not found in DB'); process.exit(1); }
   console.log('Using account:', row.email, '(id:', row.id + ')');
 
   const cookies = cookie.parse(row.cookie as string);
@@ -466,6 +466,23 @@ async function main() {
           session: [],
         }),
       };
+
+      console.log('\n  === getcaptcha formData (before encoding) ===');
+      console.log('  v:', formData.v);
+      console.log('  sitekey:', formData.sitekey);
+      console.log('  host:', formData.host);
+      console.log('  hl:', formData.hl);
+      console.log('  n (proof, first 80):', String(formData.n).substring(0, 80));
+      const motionParsed = JSON.parse(formData.motionData);
+      console.log('  motionData.st:', motionParsed.st);
+      console.log('  motionData.dct:', motionParsed.dct);
+      console.log('  motionData.mm (count):', motionParsed.mm?.length);
+      console.log('  motionData.md:', JSON.stringify(motionParsed.md));
+      console.log('  motionData.mu:', JSON.stringify(motionParsed.mu));
+      console.log('  motionData.topLevel.nv.userAgent:', motionParsed.topLevel?.nv?.userAgent);
+      console.log('  motionData.topLevel.dr:', motionParsed.topLevel?.dr);
+      console.log('  motionData full (for reference):', JSON.stringify(motionParsed, null, 2));
+      console.log('  === end formData ===\n');
 
       if (useEncrypted) {
         // 加密模式：hsw(1, msgpack(formData)) + msgpack([challengeSpecJson, encrypted])
