@@ -46,7 +46,7 @@ function rowToRun(row: SunoCreateRunRow): SunoCreateRun {
 
 export async function startSunoCreateRun(accountId: string, accountEmail: string): Promise<number> {
   const db = await getDb();
-  db.prepare(`
+  const res = db.prepare(`
     INSERT INTO suno_create_runs (run_id, account_id, account_email, status, started_at)
     VALUES (@run_id, @account_id, @account_email, 'running', @started_at)
   `).run({
@@ -56,8 +56,7 @@ export async function startSunoCreateRun(accountId: string, accountEmail: string
     started_at: new Date().toISOString(),
   });
 
-  const row = db.prepare('SELECT last_insert_rowid() AS id').get() as { id: number };
-  return row.id;
+  return res.lastInsertRowid;
 }
 
 export async function finishSunoCreateRun(

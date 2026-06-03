@@ -73,14 +73,25 @@ export class Db {
         stmt.free();
         return rows;
       },
-      run(params?: any[] | Record<string, any>): { changes: number } {
+      run(params?: any[] | Record<string, any>): { changes: number; lastInsertRowid: number } {
         const stmt = self._db.prepare(sql);
         const p = resolveParams(params);
         stmt.run(p);
         stmt.free();
         const changes: number = self._db.getRowsModified();
+        
+        let lastInsertRowid = 0;
+        try {
+          const idStmt = self._db.prepare('SELECT last_insert_rowid() AS id');
+          const idRow = idStmt.step() ? idStmt.getAsObject() : null;
+          idStmt.free();
+          if (idRow && typeof idRow.id === 'number') {
+            lastInsertRowid = idRow.id;
+          }
+        } catch (e) {}
+
         if (!self._inTx) self._persist();
-        return { changes };
+        return { changes, lastInsertRowid };
       },
     };
   }
