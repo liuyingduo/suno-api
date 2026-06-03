@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'fs';
 import path from 'node:path';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -21,9 +21,39 @@ function resolveParams(p?: any[] | Record<string, any>): any[] | Record<string, 
 
 export class Db {
   private _inTx = false;
-  constructor(private _db: any) {}
+  private _lastMtime = 0;
+
+  constructor(private _db: any, private _SQL: any) {
+    try {
+      if (existsSync(DB_FILE)) {
+        this._lastMtime = statSync(DB_FILE).mtimeMs;
+      }
+    } catch (e) {
+      this._lastMtime = Date.now();
+    }
+  }
+
+  private _checkAndReload() {
+    if (this._inTx) return;
+    try {
+      if (existsSync(DB_FILE)) {
+        const stat = statSync(DB_FILE);
+        if (stat.mtimeMs > this._lastMtime + 50) {
+          const raw = readFileSync(DB_FILE);
+          try {
+            this._db.close();
+          } catch {}
+          this._db = new this._SQL.Database(raw);
+          this._lastMtime = stat.mtimeMs;
+        }
+      }
+    } catch (e) {
+      console.error('[Db] Failed to reload db from disk:', e);
+    }
+  }
 
   prepare(sql: string) {
+    this._checkAndReload();
     const self = this;
     return {
       get(params?: any[] | Record<string, any>): any {
@@ -56,6 +86,7 @@ export class Db {
   }
 
   exec(sql: string): void {
+    this._checkAndReload();
     this._db.exec(sql);
     if (!this._inTx) this._persist();
   }
@@ -63,6 +94,7 @@ export class Db {
   transaction(fn: () => void): () => void {
     const self = this;
     return () => {
+      self._checkAndReload();
       self._inTx = true;
       try {
         self._db.run('BEGIN');
@@ -81,6 +113,11 @@ export class Db {
   private _persist(): void {
     mkdirSync(DATA_DIR, { recursive: true });
     writeFileSync(DB_FILE, Buffer.from(this._db.export()));
+    try {
+      this._lastMtime = statSync(DB_FILE).mtimeMs;
+    } catch (e) {
+      this._lastMtime = Date.now();
+    }
   }
 }
 
@@ -105,7 +142,7 @@ async function _initDb(): Promise<Db> {
   const raw = existsSync(DB_FILE) ? readFileSync(DB_FILE) : null;
   const sqlJsDb = raw ? new SQL.Database(raw) : new SQL.Database();
 
-  const db = new Db(sqlJsDb);
+  const db = new Db(sqlJsDb, SQL);
   db.exec(`
     CREATE TABLE IF NOT EXISTS accounts (
       id               TEXT PRIMARY KEY,
@@ -173,4 +210,3 @@ async function _initDb(): Promise<Db> {
 
   return db;
 }
-

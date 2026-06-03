@@ -37,15 +37,24 @@ function formatDuration(durationMs?: number) {
 export default function SunoCreateRunsPanel() {
   const [runs, setRuns] = useState<SunoCreateRun[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchRuns = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch('/api/suno-create-runs?limit=30');
       const data = await res.json();
-      setRuns(Array.isArray(data) ? data : []);
-    } catch (e) {
+      if (!res.ok) {
+        setError(data.error || `请求失败 (${res.status})`);
+        setRuns([]);
+      } else {
+        setRuns(Array.isArray(data) ? data : []);
+      }
+    } catch (e: any) {
       console.error(e);
+      setError(e?.message || '网络请求错误');
+      setRuns([]);
     } finally {
       setLoading(false);
     }
@@ -69,6 +78,15 @@ export default function SunoCreateRunsPanel() {
 
       {loading ? (
         <div className="p-10 text-center text-gray-400">加载中...</div>
+      ) : error ? (
+        <div className="p-6 text-center">
+          <div className="text-red-500 bg-red-50 inline-block px-4 py-2 rounded-lg text-sm border border-red-100 max-w-xl break-all">
+            <strong>加载失败:</strong> {error}
+          </div>
+          <button onClick={fetchRuns} className="block mx-auto mt-3 text-xs text-blue-600 hover:underline">
+            重试
+          </button>
+        </div>
       ) : runs.length === 0 ? (
         <div className="p-10 text-center text-gray-400">暂无运行记录</div>
       ) : (
