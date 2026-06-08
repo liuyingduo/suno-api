@@ -32,19 +32,30 @@ interface CaptchaResult {
   authorizationToken?: string;
 }
 
+function isGenerateRequestUrl(url: string): boolean {
+  return url.includes(GENERATE_URL_PART);
+}
+
+function isHcaptchaRequestUrl(url: string): boolean {
+  return url.includes('hcaptcha.com') || url.includes('checksiteconfig') || url.includes('/getcaptcha/');
+}
+
 export class SunoCaptchaSolver {
   private readonly yesCaptcha = new YesCaptchaClient(process.env.YESCAPTCHA_KEY ?? '');
 
   constructor(private readonly options: SunoCaptchaSolverOptions) {}
 
   public async solve(): Promise<CaptchaResult> {
+    logger.info('SunoCaptchaSolver: launching browser');
     const browser = await this.launchBrowser();
     const context = await this.createContext(browser);
+    this.attachNetworkLogging(context);
     const page = await context.newPage();
     const abortController = new AbortController();
 
     try {
       const tokenPromise = this.captureGenerateToken(page, abortController);
+      logger.info(`SunoCaptchaSolver: navigating to ${SUNO_CREATE_URL}`);
       await page.goto(SUNO_CREATE_URL, {
         referer: 'https://www.google.com/',
         waitUntil: 'domcontentloaded',
@@ -52,14 +63,16 @@ export class SunoCaptchaSolver {
       });
       await this.waitForSunoReady(page);
       await this.triggerCaptcha(page);
-      await Promise.race([
-        this.solveChallenges(page, abortController.signal),
-        tokenPromise
-      ]);
+      await Promise.race([this.solveChallenges(page, abortController.signal), tokenPromise])
+        .catch((error) => {
+          logger.warn(`SunoCaptchaSolver: challenge loop ended before token capture: ${error?.message ?? error}`);
+        });
+      logger.info('SunoCaptchaSolver: waiting for generate token capture');
       return await tokenPromise;
     } finally {
       abortController.abort();
       await browser.close();
+      logger.info('SunoCaptchaSolver: browser closed');
     }
   }
 
@@ -88,6 +101,24 @@ export class SunoCaptchaSolver {
         cookies: this.toPlaywrightCookies(),
         origins: []
       }
+    });
+  }
+
+  private attachNetworkLogging(context: BrowserContext): void {
+    context.on('request', (request) => {
+      const url = request.url();
+      if (!isGenerateRequestUrl(url) && !isHcaptchaRequestUrl(url)) {
+        return;
+      }
+      logger.info(`SunoCaptchaSolver request: ${request.method()} ${url}`);
+    });
+
+    context.on('response', (response) => {
+      const url = response.url();
+      if (!isGenerateRequestUrl(url) && !isHcaptchaRequestUrl(url)) {
+        return;
+      }
+      logger.info(`SunoCaptchaSolver response: ${response.status()} ${url}`);
     });
   }
 
@@ -126,27 +157,34 @@ export class SunoCaptchaSolver {
   private async waitForSunoReady(page: Page): Promise<void> {
     try {
       await page.waitForResponse((resp) => resp.url().includes('/api/project/'), { timeout: 60_000 });
+      logger.info('SunoCaptchaSolver: Suno project list loaded');
     } catch {
       logger.warn('Timed out waiting for Suno project list; continuing to trigger captcha');
     }
   }
 
   private async triggerCaptcha(page: Page): Promise<void> {
+    logger.info('SunoCaptchaSolver: triggering captcha from create page');
     await this.closePopups(page);
     const textarea = page.locator(`xpath=${PROMPT_TEXTAREA_XPATH}`);
+    logger.info('SunoCaptchaSolver: waiting for prompt textarea');
     await textarea.waitFor({ state: 'visible', timeout: 60_000 });
 
     await Promise.race([
-      page.waitForResponse((resp) => resp.url().includes('checksiteconfig'), { timeout: 8_000 }).catch(() => undefined),
+      page.waitForResponse((resp) => resp.url().includes('checksiteconfig'), { timeout: 8_000 })
+        .then(() => logger.info('SunoCaptchaSolver: hCaptcha checksiteconfig observed'))
+        .catch(() => logger.warn('SunoCaptchaSolver: hCaptcha checksiteconfig not observed within 8s')),
       page.waitForTimeout(8_000),
     ]);
 
+    logger.info('SunoCaptchaSolver: filling prompt textarea');
     await textarea.click();
     await textarea.fill('');
     await page.waitForTimeout(500);
     await textarea.type('Lorem ipsum', { delay: 40 });
 
     const createButton = page.locator(`xpath=${CREATE_SONG_BUTTON_XPATH}`);
+    logger.info('SunoCaptchaSolver: waiting for Create song button');
     await createButton.waitFor({ state: 'visible', timeout: 60_000 });
     await page.waitForFunction(
       () => {
@@ -161,6 +199,7 @@ export class SunoCaptchaSolver {
       },
       { timeout: 60_000 }
     );
+    logger.info('SunoCaptchaSolver: clicking Create song button');
     await createButton.click();
   }
 
@@ -181,6 +220,7 @@ export class SunoCaptchaSolver {
       page.route(`**${GENERATE_URL_PART}**`, async (route) => {
         try {
           const request = route.request();
+          logger.info('SunoCaptchaSolver: captured Suno generate request');
           await route.abort();
           clearTimeout(timeout);
           abortController.abort();
@@ -214,6 +254,7 @@ export class SunoCaptchaSolver {
     while (!signal.aborted) {
       await this.waitForHcaptchaImages(page, signal);
       const prompt = await this.readChallengePrompt(challenge);
+      logger.info(`SunoCaptchaSolver: solving hCaptcha challenge: ${prompt}`);
       const actions = await this.yesCaptcha.solveHcaptchaByImage(
         await this.screenshotChallenge(challenge),
         prompt
@@ -282,6 +323,7 @@ export class SunoCaptchaSolver {
       };
       const onRequest = (request: Request) => {
         if (!HCAPTCHA_IMAGE_RE.test(request.url())) return;
+        logger.info(`SunoCaptchaSolver: hCaptcha image request ${request.url()}`);
         requestOccurred = true;
         activeRequestCount++;
         if (timeoutHandle) clearTimeout(timeoutHandle);

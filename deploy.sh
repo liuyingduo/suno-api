@@ -24,6 +24,27 @@ green(){ echo -e "\033[0;32m$*\033[0m"; }
 cyan() { echo -e "\033[0;36m$*\033[0m"; }
 step() { echo; cyan "[$(date '+%H:%M:%S')] $*"; }
 
+get_env_value() {
+    local key="$1"
+    local value="${!key:-}"
+    if [ -z "$value" ] && [ -f "$ROOT/.env" ]; then
+        value=$(grep -E "^${key}=" "$ROOT/.env" | tail -1 | cut -d '=' -f2- | tr -d '"' | tr -d "'")
+    fi
+    echo "$value"
+}
+
+start_command() {
+    if [ "$(get_env_value BROWSER_HEADLESS)" = "false" ]; then
+        if ! command -v xvfb-run >/dev/null 2>&1; then
+            red "BROWSER_HEADLESS=false 需要安装 xvfb：sudo apt-get update && sudo apt-get install -y xvfb"
+            exit 1
+        fi
+        echo "xvfb-run -a npm run start"
+        return
+    fi
+    echo "npm run start"
+}
+
 # ── 停止服务 ──────────────────────────────────────────
 do_stop() {
     if [ -f "$PID_FILE" ]; then
@@ -73,8 +94,9 @@ do_start() {
 
     mkdir -p "$LOG_DIR"
 
-    step "在后台启动 suno-api（端口 $PORT）..."
-    nohup npm run start >"$LOG_FILE" 2>"$ERR_FILE" &
+    CMD="$(start_command)"
+    step "在后台启动 suno-api（端口 $PORT）：$CMD"
+    nohup bash -lc "$CMD" >"$LOG_FILE" 2>"$ERR_FILE" &
     echo $! > "$PID_FILE"
     green "启动成功 ✓  PID: $(cat "$PID_FILE")"
     echo
