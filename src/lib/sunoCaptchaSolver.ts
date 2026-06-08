@@ -17,6 +17,9 @@ const GENERATE_URL_PART = '/api/generate/v2-web/';
 const CAPTCHA_TIMEOUT_MS = 180_000;
 const HCAPTCHA_IMAGE_RE = /^https:\/\/img[a-zA-Z0-9]*\.hcaptcha\.com\/.*$/;
 const INVALID_COOKIE_RE = /[\x00-\x1f\x7f;,"]/;
+const PROMPT_TEXTAREA_XPATH =
+  '//*[@id="main-container"]/div/div/div/div/div/div[3]/div/div[2]/div[3]/div/div[2]/div/div[2]/div/div[1]/div[1]/div[1]/textarea';
+const CREATE_SONG_BUTTON_XPATH = '//button[@aria-label="Create song"]';
 
 interface SunoCaptchaSolverOptions {
   cookies: Record<string, string | undefined>;
@@ -130,15 +133,35 @@ export class SunoCaptchaSolver {
 
   private async triggerCaptcha(page: Page): Promise<void> {
     await this.closePopups(page);
-    const textarea = page.locator('.custom-textarea, textarea').first();
-    await textarea.waitFor({ timeout: 60_000 });
-    await textarea.click({ force: true });
-    await textarea.fill('Lorem ipsum');
+    const textarea = page.locator(`xpath=${PROMPT_TEXTAREA_XPATH}`);
+    await textarea.waitFor({ state: 'visible', timeout: 60_000 });
 
-    const createButton = page
-      .locator('button[aria-label="Create"], button[aria-label="Create song"]')
-      .first();
-    await createButton.click({ force: true });
+    await Promise.race([
+      page.waitForResponse((resp) => resp.url().includes('checksiteconfig'), { timeout: 8_000 }).catch(() => undefined),
+      page.waitForTimeout(8_000),
+    ]);
+
+    await textarea.click();
+    await textarea.fill('');
+    await page.waitForTimeout(500);
+    await textarea.type('Lorem ipsum', { delay: 40 });
+
+    const createButton = page.locator(`xpath=${CREATE_SONG_BUTTON_XPATH}`);
+    await createButton.waitFor({ state: 'visible', timeout: 60_000 });
+    await page.waitForFunction(
+      () => {
+        const button = document.evaluate(
+          '//button[@aria-label="Create song"]',
+          document,
+          null,
+          XPathResult.FIRST_ORDERED_NODE_TYPE,
+          null
+        ).singleNodeValue as HTMLButtonElement | null;
+        return Boolean(button && !button.disabled);
+      },
+      { timeout: 60_000 }
+    );
+    await createButton.click();
   }
 
   private async closePopups(page: Page): Promise<void> {
