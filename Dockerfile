@@ -18,7 +18,8 @@ ARG SUNO_COOKIE
 RUN if [ -z "$SUNO_COOKIE" ]; then echo "Warning: SUNO_COOKIE is not set. You will have to set the cookies in the Cookie header of your requests."; fi                                           
 ENV SUNO_COOKIE=${SUNO_COOKIE}
 
-RUN npm install --only=production                                                                                       
+RUN npm install --only=production
+RUN npx playwright install --with-deps chromium
                                                                                                                     
 COPY --from=builder /src/.next ./.next                                                                                  
 EXPOSE 3000                                                                                                             

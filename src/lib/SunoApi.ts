@@ -6,6 +6,7 @@ import * as cookie from 'cookie';
 import { randomUUID } from 'node:crypto';
 import { ensureLoaded, getAccountById, pickAccount, updateAccountCookie } from '@/lib/accountStore';
 import { recordRequest } from '@/lib/requestMonitor';
+import { SunoCaptchaSolver } from '@/lib/sunoCaptchaSolver';
 
 // sunoApi instance caching
 const globalForSunoApi = global as unknown as { sunoApiCache?: Map<string, SunoApi> };
@@ -267,6 +268,37 @@ class SunoApi {
     return tokenResponse.data.session_id;
   }
 
+  private async getCaptchaToken(browserToken: string): Promise<string | null> {
+    try {
+      const checkResp = await this.client.post(
+        `${SunoApi.BASE_URL}/api/c/check`,
+        { ctype: 'generation' },
+        { headers: { 'browser-token': browserToken } }
+      );
+      const checkToken = checkResp.data?.token ?? null;
+      if (checkToken) {
+        logger.info('Pre-check captcha token: ' + checkToken);
+        return checkToken;
+      }
+      if (!checkResp.data?.required) {
+        return null;
+      }
+    } catch {
+      logger.warn('Pre-check failed, trying browser captcha flow');
+    }
+
+    const solver = new SunoCaptchaSolver({
+      cookies: this.cookies,
+      userAgent: this.userAgent as string,
+      currentToken: this.currentToken
+    });
+    const result = await solver.solve();
+    if (result.authorizationToken) {
+      this.currentToken = result.authorizationToken;
+    }
+    return result.token;
+  }
+
   /**
    * Generate a song based on the prompt.
    * @param prompt The text prompt to generate audio from.
@@ -408,19 +440,7 @@ class SunoApi {
     const browserToken = JSON.stringify({
       token: JSON.stringify({ timestamp: Date.now() })
     });
-    // Pre-check: get captcha token before generating
-    let captchaToken: string | null = null;
-    try {
-      const checkResp = await this.client.post(
-        `${SunoApi.BASE_URL}/api/c/check`,
-        { ctype: 'generation' },
-        { headers: { 'browser-token': browserToken } }
-      );
-      captchaToken = checkResp.data?.token ?? null;
-      logger.info('Pre-check captcha token: ' + captchaToken);
-    } catch (e) {
-      logger.warn('Pre-check failed, proceeding without captcha token');
-    }
+    const captchaToken = await this.getCaptchaToken(browserToken);
     const payload: any = {
       make_instrumental: make_instrumental,
       mv: model || DEFAULT_MODEL,
