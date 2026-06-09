@@ -35,6 +35,55 @@ export interface AudioInfo {
   error_message?: string; // Error message if any
 }
 
+export interface SunoControlSliders {
+  weirdness_constraint?: number;
+  style_weight?: number;
+}
+
+export interface SunoGenerateMetadata {
+  web_client_pathname?: string;
+  is_max_mode?: boolean;
+  is_mumble?: boolean;
+  user_tier?: string;
+  create_session_token?: string;
+  disable_volume_normalization?: boolean;
+  control_sliders?: SunoControlSliders;
+  vocal_gender?: string;
+  lyrics_model?: string;
+}
+
+export interface SunoGenerateOptions {
+  metadata?: SunoGenerateMetadata;
+}
+
+const OPTIONAL_METADATA_KEYS: Array<keyof SunoGenerateMetadata> = [
+  'web_client_pathname',
+  'is_max_mode',
+  'is_mumble',
+  'user_tier',
+  'create_session_token',
+  'disable_volume_normalization',
+  'control_sliders',
+  'vocal_gender',
+  'lyrics_model'
+];
+
+function mergeDefinedMetadata(
+  target: Record<string, unknown>,
+  source?: SunoGenerateMetadata
+) {
+  if (!source) {
+    return;
+  }
+
+  for (const key of OPTIONAL_METADATA_KEYS) {
+    const value = source[key];
+    if (value !== undefined) {
+      target[key] = value;
+    }
+  }
+}
+
 interface PersonaResponse {
   persona: {
     id: string;
@@ -310,7 +359,8 @@ class SunoApi {
     prompt: string,
     make_instrumental: boolean = false,
     model?: string,
-    wait_audio: boolean = false
+    wait_audio: boolean = false,
+    options?: SunoGenerateOptions
   ): Promise<AudioInfo[]> {
     await this.keepAlive(false);
     const startTime = Date.now();
@@ -322,7 +372,12 @@ class SunoApi {
         undefined,
         make_instrumental,
         model,
-        wait_audio
+        wait_audio,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        options
       );
       const costTime = Date.now() - startTime;
       logger.info('Generate Response:\n' + JSON.stringify(audios, null, 2));
@@ -382,7 +437,8 @@ class SunoApi {
     make_instrumental: boolean = false,
     model?: string,
     wait_audio: boolean = false,
-    negative_tags?: string
+    negative_tags?: string,
+    options?: SunoGenerateOptions
   ): Promise<AudioInfo[]> {
     const startTime = Date.now();
     try {
@@ -394,7 +450,11 @@ class SunoApi {
         make_instrumental,
         model,
         wait_audio,
-        negative_tags
+        negative_tags,
+        undefined,
+        undefined,
+        undefined,
+        options
       );
       const costTime = Date.now() - startTime;
       logger.info(
@@ -434,7 +494,8 @@ class SunoApi {
     negative_tags?: string,
     task?: string,
     continue_clip_id?: string,
-    continue_at?: number
+    continue_at?: number,
+    options?: SunoGenerateOptions
   ): Promise<AudioInfo[]> {
     await this.keepAlive();
     const browserToken = JSON.stringify({
@@ -470,6 +531,7 @@ class SunoApi {
         lyrics_model: 'default'
       }
     };
+    mergeDefinedMetadata(payload.metadata, options?.metadata);
     if (isCustom) {
       payload.tags = tags;
       payload.title = title;
@@ -601,11 +663,12 @@ class SunoApi {
     negative_tags: string = '',
     title: string = '',
     model?: string,
-    wait_audio?: boolean
+    wait_audio?: boolean,
+    options?: SunoGenerateOptions
   ): Promise<AudioInfo[]> {
     const startTime = Date.now();
     try {
-      const result = await this.generateSongs(prompt, true, tags, title, false, model, wait_audio, negative_tags, 'extend', audioId, continueAt);
+      const result = await this.generateSongs(prompt, true, tags, title, false, model, wait_audio, negative_tags, 'extend', audioId, continueAt, options);
       await recordRequest('extend_audio', this.accountId, true, Date.now() - startTime);
       return result;
     } catch (e: any) {

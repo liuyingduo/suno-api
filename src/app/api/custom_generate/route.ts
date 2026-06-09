@@ -1,5 +1,6 @@
 import { NextResponse, NextRequest } from "next/server";
 import { DEFAULT_MODEL, sunoApi } from "@/lib/SunoApi";
+import { getSunoGenerateOptions } from "@/lib/sunoGenerateRequest";
 import { corsHeaders } from "@/lib/utils";
 
 export const maxDuration = 60; // allow longer timeout for wait_audio == true
@@ -15,7 +16,8 @@ export async function POST(req: NextRequest) {
         Boolean(make_instrumental),
         model || DEFAULT_MODEL,
         Boolean(wait_audio),
-        negative_tags
+        negative_tags,
+        getSunoGenerateOptions(body)
       );
       return new NextResponse(JSON.stringify(audioInfo), {
         status: 200,

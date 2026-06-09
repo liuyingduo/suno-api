@@ -42,6 +42,9 @@
                     "type": "boolean",
                     "description": "Whether to wait for music generation, default is false, directly return audio task information; set to true, will wait for up to 100s until the audio is generated.",
                     "example": "false"
+                  },
+                  "metadata": {
+                    "$ref": "#/components/schemas/suno_generate_metadata"
                   }
                 }
               }
@@ -162,6 +165,9 @@
                     "type": "boolean",
                     "description": "Whether to wait for music generation, default is false, directly return audio task information; set to true, will wait for up to 100s until the audio is generated.",
                     "example": "false"
+                  },
+                  "metadata": {
+                    "$ref": "#/components/schemas/suno_generate_metadata"
                   }
                 }
               }
@@ -240,6 +246,9 @@
                     "type": "string",
                     "description": "Model name ,default is chirp-auk-turbo",
                     "example": "chirp-auk-turbo"
+                  },
+                  "metadata": {
+                    "$ref": "#/components/schemas/suno_generate_metadata"
                   }
                 }
               }
@@ -819,6 +828,68 @@
   },
   "components": {
     "schemas": {
+      "suno_generate_metadata": {
+        "type": "object",
+        "description": "Optional Suno web generation metadata. Only fields provided by the client will be sent to Suno.",
+        "properties": {
+          "web_client_pathname": {
+            "type": "string",
+            "description": "Suno web client pathname.",
+            "example": "/create"
+          },
+          "is_max_mode": {
+            "type": "boolean",
+            "description": "Whether to enable Suno max mode.",
+            "example": false
+          },
+          "is_mumble": {
+            "type": "boolean",
+            "description": "Whether to enable mumble mode.",
+            "example": false
+          },
+          "user_tier": {
+            "type": "string",
+            "description": "Suno user tier identifier.",
+            "example": "e1235dd7-9f4d-4738-aeb2-1470466cba27"
+          },
+          "create_session_token": {
+            "type": "string",
+            "description": "Suno create session token.",
+            "example": "7b7505a3-7720-4bdb-8dc9-11a1976c8c0c"
+          },
+          "disable_volume_normalization": {
+            "type": "boolean",
+            "description": "Whether to disable volume normalization.",
+            "example": false
+          },
+          "control_sliders": {
+            "type": "object",
+            "description": "Suno generation control slider values.",
+            "properties": {
+              "weirdness_constraint": {
+                "type": "number",
+                "description": "Weirdness slider value.",
+                "example": 0.74
+              },
+              "style_weight": {
+                "type": "number",
+                "description": "Style influence slider value.",
+                "example": 0.26
+              }
+            }
+          },
+          "vocal_gender": {
+            "type": "string",
+            "description": "Preferred vocal gender.",
+            "example": "m"
+          },
+          "lyrics_model": {
+            "type": "string",
+            "description": "Lyrics model name.",
+            "example": "default"
+          }
+        }
+      },
       "audio_info": {
         "type": "object",
         "required": [
