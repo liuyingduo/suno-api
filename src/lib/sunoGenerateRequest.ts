@@ -9,10 +9,12 @@ const METADATA_KEYS: MetadataKey[] = [
   'web_client_pathname',
   'is_max_mode',
   'is_mumble',
+  'create_mode',
   'user_tier',
   'create_session_token',
   'disable_volume_normalization',
   'control_sliders',
+  'sound_configs',
   'vocal_gender',
   'lyrics_model'
 ];

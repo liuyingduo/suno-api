@@ -200,6 +200,83 @@
         }
       }
     },
+    "/api/generate_sound": {
+      "post": {
+        "summary": "Generate Sound - Sounds Mode",
+        "description": "Generate short samples, effects, loops, and one-shots from the Suno Sounds interface.\n\nThe request is sent to Suno as `task: sound`, `make_instrumental: true`, and defaults to the `chirp-fenix` model.\n\n`tempo`, `key`, and `loop` are convenience fields that are mapped to `metadata.sound_configs.user_tempo`, `metadata.sound_configs.user_key`, and `metadata.sound_configs.user_loop`.",
+        "tags": ["default"],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["tags", "title"],
+                "properties": {
+                  "tags": {
+                    "type": "string",
+                    "description": "Sound description or style tags.",
+                    "example": "a fly bird"
+                  },
+                  "negative_tags": {
+                    "type": "string",
+                    "description": "Negative sound tags.",
+                    "example": ""
+                  },
+                  "title": {
+                    "type": "string",
+                    "description": "Sound title.",
+                    "example": "A Fly Bird"
+                  },
+                  "model": {
+                    "type": "string",
+                    "description": "Model name, default is chirp-fenix.",
+                    "example": "chirp-fenix"
+                  },
+                  "tempo": {
+                    "type": "number",
+                    "description": "BPM value mapped to metadata.sound_configs.user_tempo.",
+                    "example": 66
+                  },
+                  "key": {
+                    "type": "string",
+                    "description": "Musical key mapped to metadata.sound_configs.user_key.",
+                    "example": "E"
+                  },
+                  "loop": {
+                    "type": "boolean",
+                    "description": "Whether to generate a loop, mapped to metadata.sound_configs.user_loop.",
+                    "example": false
+                  },
+                  "wait_audio": {
+                    "type": "boolean",
+                    "description": "Whether to wait for sound generation, default is false.",
+                    "example": false
+                  },
+                  "metadata": {
+                    "$ref": "#/components/schemas/suno_generate_metadata"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/audio_info"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/extend_audio": {
       "post": {
         "summary": "Extend audio length.",
@@ -847,6 +924,11 @@
             "description": "Whether to enable mumble mode.",
             "example": false
           },
+          "create_mode": {
+            "type": "string",
+            "description": "Suno create mode.",
+            "example": "custom"
+          },
           "user_tier": {
             "type": "string",
             "description": "Suno user tier identifier.",
@@ -875,6 +957,27 @@
                 "type": "number",
                 "description": "Style influence slider value.",
                 "example": 0.26
+              }
+            }
+          },
+          "sound_configs": {
+            "type": "object",
+            "description": "Suno Sounds mode configuration.",
+            "properties": {
+              "user_tempo": {
+                "type": "number",
+                "description": "BPM value.",
+                "example": 66
+              },
+              "user_key": {
+                "type": "string",
+                "description": "Musical key.",
+                "example": "E"
+              },
+              "user_loop": {
+                "type": "boolean",
+                "description": "Whether the sound should loop.",
+                "example": false
               }
             }
           },

@@ -15,6 +15,7 @@ globalForSunoApi.sunoApiCache = cache;
 
 const logger = pino();
 export const DEFAULT_MODEL = 'chirp-auk-turbo';
+export const DEFAULT_SOUND_MODEL = 'chirp-fenix';
 
 export interface AudioInfo {
   id: string; // Unique identifier for the audio
@@ -40,19 +41,28 @@ export interface SunoControlSliders {
   style_weight?: number;
 }
 
+export interface SunoSoundConfigs {
+  user_tempo?: number;
+  user_key?: string;
+  user_loop?: boolean;
+}
+
 export interface SunoGenerateMetadata {
   web_client_pathname?: string;
   is_max_mode?: boolean;
   is_mumble?: boolean;
+  create_mode?: string;
   user_tier?: string;
   create_session_token?: string;
   disable_volume_normalization?: boolean;
   control_sliders?: SunoControlSliders;
+  sound_configs?: SunoSoundConfigs;
   vocal_gender?: string;
   lyrics_model?: string;
 }
 
 export interface SunoGenerateOptions {
+  task?: string;
   metadata?: SunoGenerateMetadata;
 }
 
@@ -60,10 +70,12 @@ const OPTIONAL_METADATA_KEYS: Array<keyof SunoGenerateMetadata> = [
   'web_client_pathname',
   'is_max_mode',
   'is_mumble',
+  'create_mode',
   'user_tier',
   'create_session_token',
   'disable_volume_normalization',
   'control_sliders',
+  'sound_configs',
   'vocal_gender',
   'lyrics_model'
 ];
@@ -451,7 +463,7 @@ class SunoApi {
         model,
         wait_audio,
         negative_tags,
-        undefined,
+        options?.task,
         undefined,
         undefined,
         options

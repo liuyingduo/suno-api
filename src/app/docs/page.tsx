@@ -24,6 +24,7 @@ export default function Docs() {
   that works with OpenAI’s API.
 - \`/api/custom_generate\`: Generate music (Custom Mode, support setting lyrics, 
   music style, title, etc.)
+- \`/api/generate_sound\`: Generate short samples, effects, loops, and one-shots
 - \`/api/generate_lyrics\`: Generate lyrics based on prompt
 - \`/api/get\`: Get music information based on the id. Use “,” to separate multiple 
     ids.  If no IDs are provided, all music will be returned.
