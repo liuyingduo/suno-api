@@ -14,14 +14,20 @@
     "/api/generate": {
       "post": {
         "summary": "Generate audio based on Prompt.",
-        "description": "It will automatically fill in the lyrics.\n\n2 audio files will be generated for each request, consuming a total of 10 credits.\n\n`wait_audio` can be set to API mode:\n\n\u2022 By default, it is set to `false`, which indicates the background mode. It will only return audio task information, and you will need to call the get API to retrieve detailed audio information.\n\n\u2022 If set to `true`, it simulates synchronous mode. The API will wait for a maximum of 100s until the audio is generated, and will directly return the audio link and other information. Recommend using in GPTs and other agents.",
-        "tags": ["default"],
+        "description": "It will automatically fill in the lyrics.\n\n2 audio files will be generated for each request, consuming a total of 10 credits.\n\n`wait_audio` can be set to API mode:\n\n• By default, it is set to `false`, which indicates the background mode. It will only return audio task information, and you will need to call the get API to retrieve detailed audio information.\n\n• If set to `true`, it simulates synchronous mode. The API will wait for a maximum of 100s until the audio is generated, and will directly return the audio link and other information. Recommend using in GPTs and other agents.",
+        "tags": [
+          "default"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["prompt", "make_instrumental", "wait_audio"],
+                "required": [
+                  "prompt",
+                  "make_instrumental",
+                  "wait_audio"
+                ],
                 "properties": {
                   "prompt": {
                     "type": "string",
@@ -60,7 +66,10 @@
                   "type": "array",
                   "items": {
                     "type": "object",
-                    "required": ["0", "1"],
+                    "required": [
+                      "0",
+                      "1"
+                    ],
                     "properties": [
                       {
                         "$ref": "#/components/schemas/audio_info"
@@ -81,13 +90,17 @@
       "post": {
         "summary": "Generate audio based on Prompt - OpenAI API format compatibility.",
         "description": "Convert the `/api/generate` API to be compatible with the OpenAI `/v1/chat/completions` API format. \n\nGenerally used in OpenAI compatible clients.",
-        "tags": ["default"],
+        "tags": [
+          "default"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["prompt"],
+                "required": [
+                  "prompt"
+                ],
                 "properties": {
                   "prompt": {
                     "type": "string",
@@ -122,14 +135,20 @@
     "/api/custom_generate": {
       "post": {
         "summary": "Generate Audio - Custom Mode",
-        "description": "The custom mode enables users to provide additional details about the music, such as music genre, lyrics, and more.\n\n 2 audio files will be generated for each request, consuming a total of 10 credits. \n\n `wait_audio` can be set to API mode:\n\n\u2022 By default, it is set to false, which indicates the background mode. It will only return audio task information, and you will need to call the get API to retrieve detailed audio information.\n\n\u2022 If set to true, it simulates synchronous mode. The API will wait for a maximum of 100s until the audio is generated, and will directly return the audio link and other information. Recommend using in GPTs and other agents.",
-        "tags": ["default"],
+        "description": "The custom mode enables users to provide additional details about the music, such as music genre, lyrics, and more.\n\n 2 audio files will be generated for each request, consuming a total of 10 credits. \n\n `wait_audio` can be set to API mode:\n\n• By default, it is set to false, which indicates the background mode. It will only return audio task information, and you will need to call the get API to retrieve detailed audio information.\n\n• If set to true, it simulates synchronous mode. The API will wait for a maximum of 100s until the audio is generated, and will directly return the audio link and other information. Recommend using in GPTs and other agents.",
+        "tags": [
+          "default"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["prompt", "tags", "title"],
+                "required": [
+                  "prompt",
+                  "tags",
+                  "title"
+                ],
                 "properties": {
                   "prompt": {
                     "type": "string",
@@ -183,7 +202,10 @@
                   "type": "array",
                   "items": {
                     "type": "object",
-                    "required": ["0", "1"],
+                    "required": [
+                      "0",
+                      "1"
+                    ],
                     "properties": [
                       {
                         "$ref": "#/components/schemas/audio_info"
@@ -204,13 +226,18 @@
       "post": {
         "summary": "Generate Sound - Sounds Mode",
         "description": "Generate short samples, effects, loops, and one-shots from the Suno Sounds interface.\n\nThe request is sent to Suno as `task: sound`, `make_instrumental: true`, and defaults to the `chirp-fenix` model.\n\n`tempo`, `key`, and `loop` are convenience fields that are mapped to `metadata.sound_configs.user_tempo`, `metadata.sound_configs.user_key`, and `metadata.sound_configs.user_loop`.",
-        "tags": ["default"],
+        "tags": [
+          "default"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["tags", "title"],
+                "required": [
+                  "tags",
+                  "title"
+                ],
                 "properties": {
                   "tags": {
                     "type": "string",
@@ -281,13 +308,17 @@
       "post": {
         "summary": "Create audio upload.",
         "description": "Create a Suno audio upload and return a pre-signed S3 POST target. Upload the audio file to the returned `url` with all returned `fields` as multipart form fields, then call `/api/uploads/audio/{id}/upload-finish`.",
-        "tags": ["default"],
+        "tags": [
+          "default"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["extension"],
+                "required": [
+                  "extension"
+                ],
                 "properties": {
                   "extension": {
                     "type": "string",
@@ -322,7 +353,9 @@
       "post": {
         "summary": "Finish audio upload.",
         "description": "Notify Suno that the audio file has been uploaded to the S3 target returned by `/api/uploads/audio`.",
-        "tags": ["default"],
+        "tags": [
+          "default"
+        ],
         "parameters": [
           {
             "name": "id",
@@ -339,7 +372,9 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["upload_filename"],
+                "required": [
+                  "upload_filename"
+                ],
                 "properties": {
                   "upload_filename": {
                     "type": "string",
@@ -374,7 +409,9 @@
       "get": {
         "summary": "Get audio upload status.",
         "description": "Get the current Suno audio upload processing status. The response is returned exactly as Suno provides it.",
-        "tags": ["default"],
+        "tags": [
+          "default"
+        ],
         "parameters": [
           {
             "name": "id",
@@ -404,13 +441,17 @@
       "post": {
         "summary": "Extend audio length.",
         "description": "Extend audio length.",
-        "tags": ["default"],
+        "tags": [
+          "default"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["audio_id"],
+                "required": [
+                  "audio_id"
+                ],
                 "properties": {
                   "audio_id": {
                     "type": "string",
@@ -440,7 +481,7 @@
                   "negative_tags": {
                     "type": "string",
                     "description": "Negative Music genre",
-                    "example":""
+                    "example": ""
                   },
                   "model": {
                     "type": "string",
@@ -461,13 +502,17 @@
       "post": {
         "summary": "Make stem tracks (separate audio and music track).",
         "description": "Make stem tracks (separate audio and music track).",
-        "tags": ["default"],
+        "tags": [
+          "default"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["audio_id"],
+                "required": [
+                  "audio_id"
+                ],
                 "properties": {
                   "audio_id": {
                     "type": "string",
@@ -490,13 +535,17 @@
       "post": {
         "summary": "Generate lyrics based on Prompt.",
         "description": "Generate lyrics based on Prompt.",
-        "tags": ["default"],
+        "tags": [
+          "default"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["prompt"],
+                "required": [
+                  "prompt"
+                ],
                 "properties": {
                   "prompt": {
                     "type": "string",
@@ -540,7 +589,9 @@
       "get": {
         "summary": "Get audio information",
         "description": "",
-        "tags": ["default"],
+        "tags": [
+          "default"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -570,7 +621,10 @@
                   "type": "array",
                   "items": {
                     "type": "object",
-                    "required": ["0", "1"],
+                    "required": [
+                      "0",
+                      "1"
+                    ],
                     "properties": [
                       {
                         "$ref": "#/components/schemas/audio_info"
@@ -591,7 +645,9 @@
       "get": {
         "summary": "Get available model list.",
         "description": "Returns the locally cached Suno model list and the time it was last updated from the server.",
-        "tags": ["default"],
+        "tags": [
+          "default"
+        ],
         "responses": {
           "200": {
             "description": "success",
@@ -611,17 +667,63 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "id": { "type": "string", "description": "Model ID", "example": "chirp-auk-turbo" },
-                          "name": { "type": "string", "description": "Display name", "example": "Suno V4" },
-                          "external_key": { "type": "string", "description": "External key used when generating audio", "example": "chirp-auk-turbo" },
-                          "major_version": { "type": "integer", "description": "Major version number", "example": 4 },
-                          "description": { "type": "string", "description": "Model description" },
-                          "is_default_free_model": { "type": "boolean", "description": "Whether this is the default free model" },
-                          "is_default_model": { "type": "boolean", "description": "Whether this is the default model" },
-                          "can_use": { "type": "boolean", "description": "Whether the current account can use this model" },
-                          "badges": { "type": "array", "items": { "type": "string" }, "description": "Badges (e.g. new, pro)" },
-                          "capabilities": { "type": "array", "items": { "type": "string" }, "description": "Capability tags" },
-                          "features": { "type": "array", "items": { "type": "string" }, "description": "Feature tags" }
+                          "id": {
+                            "type": "string",
+                            "description": "Model ID",
+                            "example": "chirp-auk-turbo"
+                          },
+                          "name": {
+                            "type": "string",
+                            "description": "Display name",
+                            "example": "Suno V4"
+                          },
+                          "external_key": {
+                            "type": "string",
+                            "description": "External key used when generating audio",
+                            "example": "chirp-auk-turbo"
+                          },
+                          "major_version": {
+                            "type": "integer",
+                            "description": "Major version number",
+                            "example": 4
+                          },
+                          "description": {
+                            "type": "string",
+                            "description": "Model description"
+                          },
+                          "is_default_free_model": {
+                            "type": "boolean",
+                            "description": "Whether this is the default free model"
+                          },
+                          "is_default_model": {
+                            "type": "boolean",
+                            "description": "Whether this is the default model"
+                          },
+                          "can_use": {
+                            "type": "boolean",
+                            "description": "Whether the current account can use this model"
+                          },
+                          "badges": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Badges (e.g. new, pro)"
+                          },
+                          "capabilities": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Capability tags"
+                          },
+                          "features": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Feature tags"
+                          }
                         }
                       }
                     }
@@ -635,13 +737,20 @@
       "post": {
         "summary": "Manually refresh model list.",
         "description": "Triggers an immediate fetch of the latest model list from Suno and saves it to the local cache. Use `?action=refresh` as a query parameter.",
-        "tags": ["default"],
+        "tags": [
+          "default"
+        ],
         "parameters": [
           {
             "name": "action",
             "in": "query",
             "required": true,
-            "schema": { "type": "string", "enum": ["refresh"] },
+            "schema": {
+              "type": "string",
+              "enum": [
+                "refresh"
+              ]
+            },
             "description": "Must be \"refresh\"."
           }
         ],
@@ -653,13 +762,33 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "updatedAt": { "type": "string", "description": "ISO 8601 timestamp after refresh" },
-                    "models": { "type": "array", "items": { "type": "object" } },
+                    "updatedAt": {
+                      "type": "string",
+                      "description": "ISO 8601 timestamp after refresh"
+                    },
+                    "models": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
                     "diff": {
                       "type": "object",
                       "properties": {
-                        "added": { "type": "array", "items": { "type": "string" }, "description": "Newly added model names" },
-                        "removed": { "type": "array", "items": { "type": "string" }, "description": "Removed model names" }
+                        "added": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Newly added model names"
+                        },
+                        "removed": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Removed model names"
+                        }
                       }
                     }
                   }
@@ -667,7 +796,9 @@
               }
             }
           },
-          "500": { "description": "Refresh failed (no accounts configured)" }
+          "500": {
+            "description": "Refresh failed (no accounts configured)"
+          }
         }
       }
     },
@@ -675,7 +806,9 @@
       "get": {
         "summary": "Get quota information.",
         "description": "",
-        "tags": ["default"],
+        "tags": [
+          "default"
+        ],
         "responses": {
           "200": {
             "description": "success",
@@ -718,7 +851,9 @@
       "get": {
         "summary": "Get lyric alignment.",
         "description": "Get lyric alignment.",
-        "tags": ["default"],
+        "tags": [
+          "default"
+        ],
         "parameters": [
           {
             "name": "song_id",
@@ -741,7 +876,9 @@
       "get": {
         "summary": "Get clip information based on ID.",
         "description": "Retrieve specific clip information using the provided clip ID as a query parameter.",
-        "tags": ["default"],
+        "tags": [
+          "default"
+        ],
         "parameters": [
           {
             "name": "id",
@@ -803,13 +940,17 @@
       "post": {
         "summary": "Generate the whole song from extensions.",
         "description": "Concatenate audio clips to generate a complete song using the provided clip ID.",
-        "tags": ["default"],
+        "tags": [
+          "default"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["clip_id"],
+                "required": [
+                  "clip_id"
+                ],
                 "properties": {
                   "clip_id": {
                     "type": "string",
@@ -886,7 +1027,9 @@
       "get": {
         "summary": "Get persona information and clips.",
         "description": "Retrieve persona information, including associated clips and pagination data.",
-        "tags": ["default"],
+        "tags": [
+          "default"
+        ],
         "parameters": [
           {
             "name": "id",
@@ -1018,6 +1161,213 @@
                       "example": "Internal server error"
                     }
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/uploads/audio/{id}/initialize-clip": {
+      "post": {
+        "summary": "Initialize uploaded audio clip.",
+        "description": "Initialize a Suno clip from an uploaded audio file. The response is returned exactly as Suno provides it.",
+        "tags": [
+          "default"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Upload ID returned by `/api/uploads/audio`.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "user_reviewed_tags": {
+                    "type": "boolean",
+                    "example": true
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gen/{id}/set_metadata": {
+      "post": {
+        "summary": "Set clip metadata.",
+        "description": "Set metadata for a Suno clip. The response is returned exactly as Suno provides it.",
+        "tags": [
+          "default"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Clip ID.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gen/{id}/set_audio_description": {
+      "post": {
+        "summary": "Set audio description.",
+        "description": "Accept or set the generated audio description for a Suno clip. The response is returned exactly as Suno provides it.",
+        "tags": [
+          "default"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Clip ID.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "gemini_description_accepted": {
+                    "type": "boolean",
+                    "example": true
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gen/{id}/waveform-aggregates": {
+      "get": {
+        "summary": "Get waveform aggregates.",
+        "description": "Get waveform aggregates for a Suno clip. The response is returned exactly as Suno provides it.",
+        "tags": [
+          "default"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Clip ID.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/clip/{id}": {
+      "get": {
+        "summary": "Get clip information by path ID.",
+        "description": "Retrieve clip information by path parameter. The response is returned exactly as Suno provides it.",
+        "tags": [
+          "default"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Clip ID.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
                 }
               }
             }
@@ -1192,7 +1542,12 @@
       },
       "audio_upload": {
         "type": "object",
-        "required": ["id", "url", "fields", "is_file_uploaded"],
+        "required": [
+          "id",
+          "url",
+          "fields",
+          "is_file_uploaded"
+        ],
         "properties": {
           "id": {
             "type": "string",

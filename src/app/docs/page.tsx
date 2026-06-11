@@ -27,7 +27,11 @@ export default function Docs() {
 - \`/api/generate_sound\`: Generate short samples, effects, loops, and one-shots
 - \`/api/uploads/audio\`: Create audio upload credentials
 - \`/api/uploads/audio/{id}\`: Get audio upload processing status
+- \`/api/uploads/audio/{id}/initialize-clip\`: Initialize a clip from uploaded audio
 - \`/api/uploads/audio/{id}/upload-finish\`: Finish an uploaded audio file
+- \`/api/gen/{id}/set_metadata\`: Set clip metadata
+- \`/api/gen/{id}/set_audio_description\`: Accept generated audio description
+- \`/api/gen/{id}/waveform-aggregates\`: Get waveform aggregates
 - \`/api/generate_lyrics\`: Generate lyrics based on prompt
 - \`/api/get\`: Get music information based on the id. Use “,” to separate multiple 
     ids.  If no IDs are provided, all music will be returned.

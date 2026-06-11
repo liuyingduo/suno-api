@@ -382,6 +382,30 @@ class SunoApi {
     return JSON.stringify({ token: payload });
   }
 
+  private async requestRawSuno(
+    action: string,
+    method: 'GET' | 'POST',
+    pathname: string,
+    data?: object
+  ): Promise<object> {
+    await this.keepAlive(false);
+    const startTime = Date.now();
+    try {
+      const response = await this.client.request({
+        method,
+        url: `${SunoApi.BASE_URL}${pathname}`,
+        data,
+        timeout: 10000,
+        headers: { 'browser-token': this.createBrowserToken() }
+      });
+      await recordRequest(action, this.accountId, true, Date.now() - startTime);
+      return response.data;
+    } catch (e: any) {
+      await recordRequest(action, this.accountId, false, Date.now() - startTime, e?.message);
+      throw e;
+    }
+  }
+
   public async createAudioUpload(
     request: SunoUploadAudioRequest
   ): Promise<SunoUploadAudioResponse> {
@@ -434,22 +458,42 @@ class SunoApi {
   }
 
   public async getAudioUpload(uploadId: string): Promise<object> {
-    await this.keepAlive(false);
-    const startTime = Date.now();
-    try {
-      const response = await this.client.get(
-        `${SunoApi.BASE_URL}/api/uploads/audio/${uploadId}/`,
-        {
-          timeout: 10000,
-          headers: { 'browser-token': this.createBrowserToken() }
-        }
-      );
-      await recordRequest('get_audio_upload', this.accountId, true, Date.now() - startTime);
-      return response.data;
-    } catch (e: any) {
-      await recordRequest('get_audio_upload', this.accountId, false, Date.now() - startTime, e?.message);
-      throw e;
-    }
+    return this.requestRawSuno('get_audio_upload', 'GET', `/api/uploads/audio/${uploadId}/`);
+  }
+
+  public async initializeUploadClip(uploadId: string, body: object): Promise<object> {
+    return this.requestRawSuno(
+      'initialize_upload_clip',
+      'POST',
+      `/api/uploads/audio/${uploadId}/initialize-clip/`,
+      body
+    );
+  }
+
+  public async setClipMetadata(clipId: string, body: object): Promise<object> {
+    return this.requestRawSuno(
+      'set_clip_metadata',
+      'POST',
+      `/api/gen/${clipId}/set_metadata/`,
+      body
+    );
+  }
+
+  public async setAudioDescription(clipId: string, body: object): Promise<object> {
+    return this.requestRawSuno(
+      'set_audio_description',
+      'POST',
+      `/api/gen/${clipId}/set_audio_description`,
+      body
+    );
+  }
+
+  public async getWaveformAggregates(clipId: string): Promise<object> {
+    return this.requestRawSuno(
+      'get_waveform_aggregates',
+      'GET',
+      `/api/gen/${clipId}/waveform-aggregates`
+    );
   }
 
   /**
