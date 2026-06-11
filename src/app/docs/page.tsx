@@ -24,6 +24,7 @@ export default function Docs() {
   that works with OpenAI’s API.
 - \`/api/custom_generate\`: Generate music (Custom Mode, support setting lyrics, 
   music style, title, etc.)
+- \`/api/cover_generate\`: Generate cover/remix from an existing clip
 - \`/api/generate_sound\`: Generate short samples, effects, loops, and one-shots
 - \`/api/uploads/audio\`: Create audio upload credentials
 - \`/api/uploads/audio/{id}\`: Get audio upload processing status

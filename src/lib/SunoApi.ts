@@ -51,6 +51,7 @@ export interface SunoGenerateMetadata {
   web_client_pathname?: string;
   is_max_mode?: boolean;
   is_mumble?: boolean;
+  is_remix?: boolean;
   create_mode?: string;
   user_tier?: string;
   create_session_token?: string;
@@ -63,6 +64,16 @@ export interface SunoGenerateMetadata {
 
 export interface SunoGenerateOptions {
   task?: string;
+  generation_type?: string;
+  gpt_description_prompt?: string;
+  override_fields?: string[];
+  cover_clip_id?: string | null;
+  cover_start_s?: number | null;
+  cover_end_s?: number | null;
+  persona_id?: string | null;
+  artist_clip_id?: string | null;
+  artist_start_s?: number | null;
+  artist_end_s?: number | null;
   metadata?: SunoGenerateMetadata;
 }
 
@@ -87,6 +98,7 @@ const OPTIONAL_METADATA_KEYS: Array<keyof SunoGenerateMetadata> = [
   'web_client_pathname',
   'is_max_mode',
   'is_mumble',
+  'is_remix',
   'create_mode',
   'user_tier',
   'create_session_token',
@@ -95,6 +107,20 @@ const OPTIONAL_METADATA_KEYS: Array<keyof SunoGenerateMetadata> = [
   'sound_configs',
   'vocal_gender',
   'lyrics_model'
+];
+
+const OPTIONAL_GENERATE_KEYS: Array<keyof SunoGenerateOptions> = [
+  'task',
+  'generation_type',
+  'gpt_description_prompt',
+  'override_fields',
+  'cover_clip_id',
+  'cover_start_s',
+  'cover_end_s',
+  'persona_id',
+  'artist_clip_id',
+  'artist_start_s',
+  'artist_end_s'
 ];
 
 function mergeDefinedMetadata(
@@ -106,6 +132,22 @@ function mergeDefinedMetadata(
   }
 
   for (const key of OPTIONAL_METADATA_KEYS) {
+    const value = source[key];
+    if (value !== undefined) {
+      target[key] = value;
+    }
+  }
+}
+
+function mergeDefinedGenerateOptions(
+  target: Record<string, unknown>,
+  source?: SunoGenerateOptions
+) {
+  if (!source) {
+    return;
+  }
+
+  for (const key of OPTIONAL_GENERATE_KEYS) {
     const value = source[key];
     if (value !== undefined) {
       target[key] = value;
@@ -617,6 +659,41 @@ class SunoApi {
     }
   }
 
+  public async cover_generate(
+    prompt: string,
+    title: string,
+    make_instrumental: boolean = false,
+    model?: string,
+    wait_audio: boolean = false,
+    options?: SunoGenerateOptions
+  ): Promise<AudioInfo[]> {
+    const startTime = Date.now();
+    try {
+      const audios = await this.generateSongs(
+        prompt,
+        true,
+        undefined,
+        title,
+        make_instrumental,
+        model,
+        wait_audio,
+        undefined,
+        options?.task,
+        undefined,
+        undefined,
+        options
+      );
+      const costTime = Date.now() - startTime;
+      logger.info('Cover Generate Response:\n' + JSON.stringify(audios, null, 2));
+      logger.info('Cost time: ' + costTime);
+      await recordRequest('cover_generate', this.accountId, true, costTime);
+      return audios;
+    } catch (e: any) {
+      await recordRequest('cover_generate', this.accountId, false, Date.now() - startTime, e?.message);
+      throw e;
+    }
+  }
+
   /**
    * Generates songs based on the provided parameters.
    *
@@ -654,7 +731,7 @@ class SunoApi {
       make_instrumental: make_instrumental,
       mv: model || DEFAULT_MODEL,
       prompt: '',
-      generation_type: 'TEXT',
+      generation_type: options?.generation_type || 'TEXT',
       continue_at: continue_at,
       continue_clip_id: continue_clip_id,
       continued_aligned_prompt: null,
@@ -679,12 +756,22 @@ class SunoApi {
         lyrics_model: 'default'
       }
     };
+    mergeDefinedGenerateOptions(payload, options);
     mergeDefinedMetadata(payload.metadata, options?.metadata);
     if (isCustom) {
-      payload.tags = tags;
-      payload.title = title;
-      payload.negative_tags = negative_tags;
+      if (tags !== undefined) {
+        payload.tags = tags;
+      }
+      if (title !== undefined) {
+        payload.title = title;
+      }
+      if (negative_tags !== undefined) {
+        payload.negative_tags = negative_tags;
+      }
       payload.prompt = prompt;
+      if (options?.gpt_description_prompt !== undefined) {
+        payload.gpt_description_prompt = options.gpt_description_prompt;
+      }
     } else {
       payload.gpt_description_prompt = prompt;
     }

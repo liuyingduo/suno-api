@@ -4,11 +4,13 @@ import type {
 } from '@/lib/SunoApi';
 
 type MetadataKey = keyof SunoGenerateMetadata;
+type GenerateOptionKey = keyof Omit<SunoGenerateOptions, 'metadata'>;
 
 const METADATA_KEYS: MetadataKey[] = [
   'web_client_pathname',
   'is_max_mode',
   'is_mumble',
+  'is_remix',
   'create_mode',
   'user_tier',
   'create_session_token',
@@ -17,6 +19,20 @@ const METADATA_KEYS: MetadataKey[] = [
   'sound_configs',
   'vocal_gender',
   'lyrics_model'
+];
+
+const GENERATE_OPTION_KEYS: GenerateOptionKey[] = [
+  'task',
+  'generation_type',
+  'gpt_description_prompt',
+  'override_fields',
+  'cover_clip_id',
+  'cover_start_s',
+  'cover_end_s',
+  'persona_id',
+  'artist_clip_id',
+  'artist_start_s',
+  'artist_end_s'
 ];
 
 function copyDefinedMetadata(
@@ -35,6 +51,7 @@ export function getSunoGenerateOptions(
   body: Record<string, unknown>
 ): SunoGenerateOptions | undefined {
   const metadata: SunoGenerateMetadata = {};
+  const options: SunoGenerateOptions = {};
   const requestMetadata = body.metadata;
 
   if (requestMetadata && typeof requestMetadata === 'object') {
@@ -43,9 +60,20 @@ export function getSunoGenerateOptions(
 
   copyDefinedMetadata(metadata, body);
 
-  if (Object.keys(metadata).length === 0) {
+  for (const key of GENERATE_OPTION_KEYS) {
+    const value = body[key];
+    if (value !== undefined) {
+      options[key] = value as never;
+    }
+  }
+
+  if (Object.keys(metadata).length > 0) {
+    options.metadata = metadata;
+  }
+
+  if (Object.keys(options).length === 0) {
     return undefined;
   }
 
-  return { metadata };
+  return options;
 }

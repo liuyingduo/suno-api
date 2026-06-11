@@ -1374,6 +1374,84 @@
           }
         }
       }
+    },
+    "/api/cover_generate": {
+      "post": {
+        "summary": "Generate cover/remix from an existing clip.",
+        "description": "Generate a cover/remix using an existing clip ID. This maps to Suno `task: cover`, `generation_type: SIMPLE_REMIX`, `metadata.is_remix: true`, and `override_fields: [\"prompt\"]` by default.",
+        "tags": [
+          "default"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "cover_clip_id",
+                  "prompt",
+                  "title"
+                ],
+                "properties": {
+                  "cover_clip_id": {
+                    "type": "string",
+                    "description": "Existing clip ID to cover/remix.",
+                    "example": "6bcf232e-3917-4cd6-bdc1-bbff62bca970"
+                  },
+                  "prompt": {
+                    "type": "string",
+                    "description": "Lyrics or prompt override for the cover."
+                  },
+                  "title": {
+                    "type": "string",
+                    "description": "Generated cover title.",
+                    "example": "窗边一小把土 (Cover)"
+                  },
+                  "gpt_description_prompt": {
+                    "type": "string",
+                    "description": "Style description prompt.",
+                    "example": "happy"
+                  },
+                  "model": {
+                    "type": "string",
+                    "description": "Model name, default is chirp-fenix.",
+                    "example": "chirp-fenix"
+                  },
+                  "make_instrumental": {
+                    "type": "boolean",
+                    "description": "Whether to generate instrumental audio.",
+                    "example": false
+                  },
+                  "wait_audio": {
+                    "type": "boolean",
+                    "description": "Whether to wait for audio generation.",
+                    "example": false
+                  },
+                  "metadata": {
+                    "$ref": "#/components/schemas/suno_generate_metadata"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/audio_info"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
