@@ -433,6 +433,25 @@ class SunoApi {
     }
   }
 
+  public async getAudioUpload(uploadId: string): Promise<object> {
+    await this.keepAlive(false);
+    const startTime = Date.now();
+    try {
+      const response = await this.client.get(
+        `${SunoApi.BASE_URL}/api/uploads/audio/${uploadId}/`,
+        {
+          timeout: 10000,
+          headers: { 'browser-token': this.createBrowserToken() }
+        }
+      );
+      await recordRequest('get_audio_upload', this.accountId, true, Date.now() - startTime);
+      return response.data;
+    } catch (e: any) {
+      await recordRequest('get_audio_upload', this.accountId, false, Date.now() - startTime, e?.message);
+      throw e;
+    }
+  }
+
   /**
    * Generate a song based on the prompt.
    * @param prompt The text prompt to generate audio from.

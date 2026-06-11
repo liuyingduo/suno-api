@@ -103,6 +103,7 @@ Suno API currently mainly implements the following APIs:
   music style, title, etc.)
 - \`/api/generate_sound\`: Generate short samples, effects, loops, and one-shots
 - \`/api/uploads/audio\`: Create audio upload credentials
+- \`/api/uploads/audio/{id}\`: Get audio upload processing status
 - \`/api/uploads/audio/{id}/upload-finish\`: Finish an uploaded audio file
 - \`/api/generate_lyrics\`: Generate lyrics based on prompt
 - \`/api/get\`: Get music list

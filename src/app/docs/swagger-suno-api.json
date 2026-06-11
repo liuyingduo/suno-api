@@ -370,6 +370,36 @@
         }
       }
     },
+    "/api/uploads/audio/{id}": {
+      "get": {
+        "summary": "Get audio upload status.",
+        "description": "Get the current Suno audio upload processing status. The response is returned exactly as Suno provides it.",
+        "tags": ["default"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Upload ID returned by `/api/uploads/audio`.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/audio_upload_status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/extend_audio": {
       "post": {
         "summary": "Extend audio length.",
@@ -1189,6 +1219,44 @@
         },
         "title": "audio_upload",
         "description": "Audio upload credentials"
+      },
+      "audio_upload_status": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Upload ID.",
+            "example": "089e56f9-80cf-45bd-9db8-e2bf57c5d39a"
+          },
+          "status": {
+            "type": "string",
+            "description": "Upload processing status.",
+            "example": "passed_audio_processing"
+          },
+          "title": {
+            "type": "string",
+            "description": "Upload title.",
+            "example": ""
+          },
+          "copyright_muted": {
+            "type": "boolean",
+            "description": "Whether the uploaded audio is copyright muted.",
+            "example": false
+          },
+          "error_message": {
+            "type": "string",
+            "description": "Error message when processing fails.",
+            "example": "This audio matches an existing recording in our catalog."
+          },
+          "error_type": {
+            "type": "string",
+            "description": "Error type when processing fails.",
+            "example": "upload_failure_match_acrcloud"
+          }
+        },
+        "additionalProperties": true,
+        "title": "audio_upload_status",
+        "description": "Audio upload processing status"
       }
     }
   }
