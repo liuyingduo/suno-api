@@ -96,13 +96,9 @@ You can check out the detailed API documentation at [suno.gcui.ai/docs](https://
 Suno API currently mainly implements the following APIs:
 
 \`\`\`bash
-- \`/api/generate\`: Generate music
+- \`/api/generate\`: Generate music, custom songs, sounds, and cover/remix
 - \`/v1/chat/completions\`: Generate music - Call the generate API in a format 
   that works with OpenAI’s API.
-- \`/api/custom_generate\`: Generate music (Custom Mode, support setting lyrics, 
-  music style, title, etc.)
-- \`/api/cover_generate\`: Generate cover/remix from an existing clip
-- \`/api/generate_sound\`: Generate short samples, effects, loops, and one-shots
 - \`/api/uploads/audio\`: Create audio upload credentials
 - \`/api/uploads/audio/{id}\`: Get audio upload processing status
 - \`/api/uploads/audio/{id}/initialize-clip\`: Initialize a clip from uploaded audio

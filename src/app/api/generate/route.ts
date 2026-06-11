@@ -1,101 +1,37 @@
-import { NextResponse, NextRequest } from "next/server";
-import { DEFAULT_MODEL, sunoApi } from "@/lib/SunoApi";
-import { getSunoGenerateOptions } from "@/lib/sunoGenerateRequest";
-import { corsHeaders } from "@/lib/utils";
+import { NextRequest } from "next/server";
+import { sunoApi } from "@/lib/SunoApi";
+import { getSunoGenerateModeRequest } from "@/lib/sunoGenerateRequest";
+import { errorResponse, jsonResponse, optionsResponse } from "@/app/api/sunoProxyResponse";
 
+export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
-  if (req.method === 'POST') {
-    try {
-      const body = await req.json();
-      const { prompt, make_instrumental, model, wait_audio } = body;
+  try {
+    const body = await req.json();
+    const request = getSunoGenerateModeRequest(body);
+    const audioInfo = await (await sunoApi()).generate(
+      request.prompt,
+      request.make_instrumental,
+      request.model,
+      request.wait_audio,
+      request.options,
+      request.isCustom
+        ? {
+            tags: request.tags,
+            title: request.title,
+            negative_tags: request.negative_tags
+          }
+        : undefined
+    );
 
-      const audioInfo = await (await sunoApi()).generate(
-        prompt,
-        Boolean(make_instrumental),
-        model || DEFAULT_MODEL,
-        Boolean(wait_audio),
-        getSunoGenerateOptions(body)
-      );
-
-      return new NextResponse(JSON.stringify(audioInfo), {
-        status: 200,
-        headers: {
-          'Content-Type': 'application/json',
-          ...corsHeaders
-        }
-      });
-    } catch (error: any) {
-      console.error('Error generating audio:', error);
-      
-      // Handle different types of errors
-      if (error.response) {
-        // Axios error with response
-        console.error('Response error:', JSON.stringify(error.response.data));
-        
-        if (error.response.status === 402) {
-          return new NextResponse(JSON.stringify({ 
-            error: error.response.data?.detail || 'Payment required' 
-          }), {
-            status: 402,
-            headers: {
-              'Content-Type': 'application/json',
-              ...corsHeaders
-            }
-          });
-        }
-        
-        return new NextResponse(JSON.stringify({ 
-          error: 'API Error: ' + (error.response.data?.detail || error.response.statusText || 'Unknown error')
-        }), {
-          status: error.response.status || 500,
-          headers: {
-            'Content-Type': 'application/json',
-            ...corsHeaders
-          }
-        });
-      } else if (error.request) {
-        // Axios error without response (network error, timeout, etc.)
-        console.error('Network error:', error.message);
-        return new NextResponse(JSON.stringify({ 
-          error: 'Network error: Unable to connect to Suno API. Please check your internet connection and try again.' 
-        }), {
-          status: 503,
-          headers: {
-            'Content-Type': 'application/json',
-            ...corsHeaders
-          }
-        });
-      } else {
-        // Other types of errors (timeout, etc.)
-        console.error('Other error:', error.message);
-        return new NextResponse(JSON.stringify({ 
-          error: 'Internal error: ' + (error.message || 'Unknown error occurred') 
-        }), {
-          status: 500,
-          headers: {
-            'Content-Type': 'application/json',
-            ...corsHeaders
-          }
-        });
-      }
-    }
-  } else {
-    return new NextResponse('Method Not Allowed', {
-      headers: {
-        Allow: 'POST',
-        ...corsHeaders
-      },
-      status: 405
-    });
+    return jsonResponse(audioInfo);
+  } catch (error: any) {
+    console.error('Error generating audio:', error);
+    return errorResponse(error);
   }
 }
 
-
-export async function OPTIONS(request: Request) {
-  return new Response(null, {
-    status: 200,
-    headers: corsHeaders
-  });
+export async function OPTIONS() {
+  return optionsResponse();
 }

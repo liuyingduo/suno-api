@@ -2,6 +2,7 @@ import type {
   SunoGenerateMetadata,
   SunoGenerateOptions
 } from '@/lib/SunoApi';
+import { DEFAULT_MODEL, DEFAULT_SOUND_MODEL } from '@/lib/SunoApi';
 
 type MetadataKey = keyof SunoGenerateMetadata;
 type GenerateOptionKey = keyof Omit<SunoGenerateOptions, 'metadata'>;
@@ -76,4 +77,93 @@ export function getSunoGenerateOptions(
   }
 
   return options;
+}
+
+export interface SunoGenerateModeRequest {
+  prompt: string;
+  tags?: string;
+  title?: string;
+  make_instrumental: boolean;
+  model: string;
+  wait_audio: boolean;
+  negative_tags?: string;
+  options?: SunoGenerateOptions;
+  isCustom: boolean;
+}
+
+function applySoundConfigShortcuts(
+  metadata: SunoGenerateMetadata,
+  body: Record<string, unknown>
+) {
+  const soundConfigs = {
+    ...(metadata.sound_configs ?? {})
+  };
+
+  if (body.tempo !== undefined) {
+    soundConfigs.user_tempo = Number(body.tempo);
+  }
+  if (body.user_tempo !== undefined) {
+    soundConfigs.user_tempo = Number(body.user_tempo);
+  }
+  if (body.key !== undefined) {
+    soundConfigs.user_key = String(body.key);
+  }
+  if (body.user_key !== undefined) {
+    soundConfigs.user_key = String(body.user_key);
+  }
+  if (body.loop !== undefined) {
+    soundConfigs.user_loop = Boolean(body.loop);
+  }
+  if (body.user_loop !== undefined) {
+    soundConfigs.user_loop = Boolean(body.user_loop);
+  }
+  if (Object.keys(soundConfigs).length > 0) {
+    metadata.sound_configs = soundConfigs;
+  }
+}
+
+function normalizeGenerateOptions(
+  body: Record<string, unknown>,
+  options: SunoGenerateOptions
+) {
+  const metadata = { ...(options.metadata ?? {}) };
+  applySoundConfigShortcuts(metadata, body);
+
+  if (body.task === 'sound') {
+    options.task = 'sound';
+    metadata.create_mode = metadata.create_mode ?? 'custom';
+  }
+  if (body.task === 'cover' || body.cover_clip_id !== undefined) {
+    options.task = 'cover';
+    options.generation_type = options.generation_type ?? 'SIMPLE_REMIX';
+    options.override_fields = options.override_fields ?? ['prompt'];
+    metadata.is_remix = metadata.is_remix ?? true;
+  }
+  if (Object.keys(metadata).length > 0) {
+    options.metadata = metadata;
+  }
+}
+
+export function getSunoGenerateModeRequest(
+  body: Record<string, unknown>
+): SunoGenerateModeRequest {
+  const options = getSunoGenerateOptions(body) ?? {};
+  normalizeGenerateOptions(body, options);
+
+  const task = options.task ?? body.task;
+  const isSound = task === 'sound';
+  const isCover = task === 'cover' || body.cover_clip_id !== undefined;
+  const isCustom = isSound || isCover || body.tags !== undefined || body.title !== undefined;
+
+  return {
+    prompt: String(body.prompt ?? ''),
+    tags: body.tags === undefined ? undefined : String(body.tags),
+    title: body.title === undefined ? undefined : String(body.title),
+    make_instrumental: isSound ? true : Boolean(body.make_instrumental),
+    model: String(body.model ?? (isSound || isCover ? DEFAULT_SOUND_MODEL : DEFAULT_MODEL)),
+    wait_audio: Boolean(body.wait_audio),
+    negative_tags: body.negative_tags === undefined ? undefined : String(body.negative_tags),
+    options,
+    isCustom
+  };
 }

@@ -550,21 +550,27 @@ class SunoApi {
     make_instrumental: boolean = false,
     model?: string,
     wait_audio: boolean = false,
-    options?: SunoGenerateOptions
+    options?: SunoGenerateOptions,
+    custom?: {
+      tags?: string;
+      title?: string;
+      negative_tags?: string;
+    }
   ): Promise<AudioInfo[]> {
     await this.keepAlive(false);
     const startTime = Date.now();
     try {
+      const isCustom = custom !== undefined;
       const audios = await this.generateSongs(
         prompt,
-        false,
-        undefined,
-        undefined,
+        isCustom,
+        custom?.tags,
+        custom?.title,
         make_instrumental,
         model,
         wait_audio,
-        undefined,
-        undefined,
+        custom?.negative_tags,
+        options?.task,
         undefined,
         undefined,
         options
