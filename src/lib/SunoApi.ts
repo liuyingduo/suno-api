@@ -66,6 +66,23 @@ export interface SunoGenerateOptions {
   metadata?: SunoGenerateMetadata;
 }
 
+export interface SunoUploadAudioRequest {
+  extension: string;
+  upload_type?: string;
+}
+
+export interface SunoUploadAudioResponse {
+  id: string;
+  url: string;
+  fields: Record<string, string>;
+  is_file_uploaded: boolean;
+}
+
+export interface SunoUploadFinishRequest {
+  upload_type?: string;
+  upload_filename: string;
+}
+
 const OPTIONAL_METADATA_KEYS: Array<keyof SunoGenerateMetadata> = [
   'web_client_pathname',
   'is_max_mode',
@@ -358,6 +375,62 @@ class SunoApi {
       this.currentToken = result.authorizationToken;
     }
     return result.token;
+  }
+
+  private createBrowserToken(): string {
+    const payload = Buffer.from(JSON.stringify({ timestamp: Date.now() })).toString('base64');
+    return JSON.stringify({ token: payload });
+  }
+
+  public async createAudioUpload(
+    request: SunoUploadAudioRequest
+  ): Promise<SunoUploadAudioResponse> {
+    await this.keepAlive(false);
+    const startTime = Date.now();
+    try {
+      const response = await this.client.post(
+        `${SunoApi.BASE_URL}/api/uploads/audio/`,
+        {
+          extension: request.extension,
+          upload_type: request.upload_type || 'file_upload'
+        },
+        {
+          timeout: 10000,
+          headers: { 'browser-token': this.createBrowserToken() }
+        }
+      );
+      await recordRequest('create_audio_upload', this.accountId, true, Date.now() - startTime);
+      return response.data;
+    } catch (e: any) {
+      await recordRequest('create_audio_upload', this.accountId, false, Date.now() - startTime, e?.message);
+      throw e;
+    }
+  }
+
+  public async finishAudioUpload(
+    uploadId: string,
+    request: SunoUploadFinishRequest
+  ): Promise<object> {
+    await this.keepAlive(false);
+    const startTime = Date.now();
+    try {
+      const response = await this.client.post(
+        `${SunoApi.BASE_URL}/api/uploads/audio/${uploadId}/upload-finish/`,
+        {
+          upload_type: request.upload_type || 'file_upload',
+          upload_filename: request.upload_filename
+        },
+        {
+          timeout: 10000,
+          headers: { 'browser-token': this.createBrowserToken() }
+        }
+      );
+      await recordRequest('finish_audio_upload', this.accountId, true, Date.now() - startTime);
+      return response.data;
+    } catch (e: any) {
+      await recordRequest('finish_audio_upload', this.accountId, false, Date.now() - startTime, e?.message);
+      throw e;
+    }
   }
 
   /**

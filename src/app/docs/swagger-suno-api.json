@@ -277,6 +277,99 @@
         }
       }
     },
+    "/api/uploads/audio": {
+      "post": {
+        "summary": "Create audio upload.",
+        "description": "Create a Suno audio upload and return a pre-signed S3 POST target. Upload the audio file to the returned `url` with all returned `fields` as multipart form fields, then call `/api/uploads/audio/{id}/upload-finish`.",
+        "tags": ["default"],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["extension"],
+                "properties": {
+                  "extension": {
+                    "type": "string",
+                    "description": "Audio file extension.",
+                    "example": "flac"
+                  },
+                  "upload_type": {
+                    "type": "string",
+                    "description": "Upload type, default is file_upload.",
+                    "example": "file_upload"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/audio_upload"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/uploads/audio/{id}/upload-finish": {
+      "post": {
+        "summary": "Finish audio upload.",
+        "description": "Notify Suno that the audio file has been uploaded to the S3 target returned by `/api/uploads/audio`.",
+        "tags": ["default"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Upload ID returned by `/api/uploads/audio`.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["upload_filename"],
+                "properties": {
+                  "upload_filename": {
+                    "type": "string",
+                    "description": "Original uploaded filename.",
+                    "example": "F000002qU5aY3Qu24y_1.flac"
+                  },
+                  "upload_type": {
+                    "type": "string",
+                    "description": "Upload type, default is file_upload.",
+                    "example": "file_upload"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/extend_audio": {
       "post": {
         "summary": "Extend audio length.",
@@ -1066,6 +1159,36 @@
         },
         "title": "audio_info",
         "description": "Audio Info"
+      },
+      "audio_upload": {
+        "type": "object",
+        "required": ["id", "url", "fields", "is_file_uploaded"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Upload ID.",
+            "example": "086ebf82-6f91-40dc-a9ad-39e80aaf3a7d"
+          },
+          "url": {
+            "type": "string",
+            "description": "S3 POST target URL.",
+            "example": "https://suno-uploads.s3.amazonaws.com/"
+          },
+          "fields": {
+            "type": "object",
+            "description": "Multipart form fields required by the S3 POST upload.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "is_file_uploaded": {
+            "type": "boolean",
+            "description": "Whether Suno already considers the file uploaded.",
+            "example": false
+          }
+        },
+        "title": "audio_upload",
+        "description": "Audio upload credentials"
       }
     }
   }
