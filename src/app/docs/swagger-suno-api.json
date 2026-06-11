@@ -1258,6 +1258,84 @@
           }
         }
       }
+    },
+    "/api/custom_generate": {
+      "post": {
+        "summary": "Generate Audio - Custom Mode compatibility endpoint",
+        "description": "Backward-compatible Custom Mode endpoint. New integrations can use `/api/generate` with `tags` and `title`; this route is kept for existing callers.",
+        "tags": [
+          "default"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "prompt",
+                  "tags",
+                  "title"
+                ],
+                "properties": {
+                  "prompt": {
+                    "type": "string",
+                    "description": "Detailed prompt or lyrics."
+                  },
+                  "tags": {
+                    "type": "string",
+                    "description": "Music style tags.",
+                    "example": "pop metal male melancholic"
+                  },
+                  "title": {
+                    "type": "string",
+                    "description": "Music title.",
+                    "example": "Silent Battlefield"
+                  },
+                  "negative_tags": {
+                    "type": "string",
+                    "description": "Negative music tags.",
+                    "example": "female edm techno"
+                  },
+                  "make_instrumental": {
+                    "type": "boolean",
+                    "description": "Whether to generate instrumental music.",
+                    "example": false
+                  },
+                  "model": {
+                    "type": "string",
+                    "description": "Model name.",
+                    "example": "chirp-auk-turbo"
+                  },
+                  "wait_audio": {
+                    "type": "boolean",
+                    "description": "Whether to wait for music generation.",
+                    "example": false
+                  },
+                  "metadata": {
+                    "$ref": "#/components/schemas/suno_generate_metadata"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/audio_info"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {

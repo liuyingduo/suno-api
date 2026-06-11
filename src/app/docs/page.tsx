@@ -22,6 +22,7 @@ export default function Docs() {
 - \`/api/generate\`: Generate music, custom songs, sounds, and cover/remix
 - \`/v1/chat/completions\`: Generate music - Call the generate API in a format 
   that works with OpenAI’s API.
+- \`/api/custom_generate\`: Backward-compatible Custom Mode endpoint
 - \`/api/uploads/audio\`: Create audio upload credentials
 - \`/api/uploads/audio/{id}\`: Get audio upload processing status
 - \`/api/uploads/audio/{id}/initialize-clip\`: Initialize a clip from uploaded audio
