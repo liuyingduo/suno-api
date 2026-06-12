@@ -1226,6 +1226,28 @@
         }
       }
     },
+    "/api/prompts/suggestions": {
+      "get": {
+        "summary": "Get prompt suggestions.",
+        "description": "Get prompt suggestions from Suno. The response is returned exactly as Suno provides it.",
+        "tags": [
+          "default"
+        ],
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/clip/{id}": {
       "get": {
         "summary": "Get clip information by path ID.",

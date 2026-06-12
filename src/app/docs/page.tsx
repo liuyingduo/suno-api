@@ -30,6 +30,7 @@ export default function Docs() {
 - \`/api/gen/{id}/set_metadata\`: Set clip metadata
 - \`/api/gen/{id}/set_audio_description\`: Accept generated audio description
 - \`/api/gen/{id}/waveform-aggregates\`: Get waveform aggregates
+- \`/api/prompts/suggestions\`: Get prompt suggestions
 - \`/api/generate_lyrics\`: Generate lyrics based on prompt
 - \`/api/get\`: Get music information based on the id. Use “,” to separate multiple 
     ids.  If no IDs are provided, all music will be returned.

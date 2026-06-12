@@ -538,6 +538,14 @@ class SunoApi {
     );
   }
 
+  public async getPromptSuggestions(): Promise<object> {
+    return this.requestRawSuno(
+      'get_prompt_suggestions',
+      'GET',
+      '/api/prompts/suggestions'
+    );
+  }
+
   /**
    * Generate a song based on the prompt.
    * @param prompt The text prompt to generate audio from.
