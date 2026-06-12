@@ -1093,7 +1093,53 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true
+                  "required": [
+                    "prompts",
+                    "lyrics_prompts",
+                    "tags",
+                    "is_pending_personalization"
+                  ],
+                  "properties": {
+                    "prompts": {
+                      "type": "array",
+                      "description": "Prompt suggestions for simple music generation.",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": [
+                        "mellow folk metal song about the tree outside my window",
+                        "whimsical dub song about one-sided love"
+                      ]
+                    },
+                    "lyrics_prompts": {
+                      "type": "array",
+                      "description": "Lyrics prompt suggestions.",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": [
+                        "Time moves slow when you're waiting for a sign",
+                        "I keep your memory like a song I can't forget"
+                      ]
+                    },
+                    "tags": {
+                      "type": "array",
+                      "description": "Style tag suggestions.",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": [
+                        "orthodox chant",
+                        "lush orchestration",
+                        "bop"
+                      ]
+                    },
+                    "is_pending_personalization": {
+                      "type": "boolean",
+                      "description": "Whether Suno is still preparing personalized suggestions.",
+                      "example": false
+                    }
+                  }
                 }
               }
             }

@@ -94,6 +94,13 @@ export interface SunoUploadFinishRequest {
   upload_filename: string;
 }
 
+export interface PromptSuggestionsResponse {
+  prompts: string[];
+  lyrics_prompts: string[];
+  tags: string[];
+  is_pending_personalization: boolean;
+}
+
 const OPTIONAL_METADATA_KEYS: Array<keyof SunoGenerateMetadata> = [
   'web_client_pathname',
   'is_max_mode',
@@ -538,12 +545,12 @@ class SunoApi {
     );
   }
 
-  public async getPromptSuggestions(): Promise<object> {
+  public async getPromptSuggestions(): Promise<PromptSuggestionsResponse> {
     return this.requestRawSuno(
       'get_prompt_suggestions',
       'GET',
       '/api/prompts/suggestions'
-    );
+    ) as Promise<PromptSuggestionsResponse>;
   }
 
   /**
