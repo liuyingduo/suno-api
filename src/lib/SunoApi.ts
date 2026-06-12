@@ -101,6 +101,16 @@ export interface PromptSuggestionsResponse {
   is_pending_personalization: boolean;
 }
 
+export interface PromptUpsampleRequest {
+  original_tags: string;
+  is_instrumental: boolean;
+}
+
+export interface PromptUpsampleResponse {
+  upsampled: string;
+  request_id: string;
+}
+
 const OPTIONAL_METADATA_KEYS: Array<keyof SunoGenerateMetadata> = [
   'web_client_pathname',
   'is_max_mode',
@@ -551,6 +561,17 @@ class SunoApi {
       'GET',
       '/api/prompts/suggestions'
     ) as Promise<PromptSuggestionsResponse>;
+  }
+
+  public async upsamplePrompt(
+    request: PromptUpsampleRequest
+  ): Promise<PromptUpsampleResponse> {
+    return this.requestRawSuno(
+      'upsample_prompt',
+      'POST',
+      '/api/prompts/upsample',
+      request
+    ) as Promise<PromptUpsampleResponse>;
   }
 
   /**

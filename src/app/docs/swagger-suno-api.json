@@ -1340,6 +1340,69 @@
         }
       }
     },
+    "/api/prompts/upsample": {
+      "post": {
+        "summary": "Upsample prompt style tags.",
+        "description": "Upsample user-provided style tags into a richer Suno prompt tag description.",
+        "tags": [
+          "default"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "original_tags",
+                  "is_instrumental"
+                ],
+                "properties": {
+                  "original_tags": {
+                    "type": "string",
+                    "description": "Original style tags to expand. Use an empty string when no tags are provided.",
+                    "example": ""
+                  },
+                  "is_instrumental": {
+                    "type": "boolean",
+                    "description": "Whether the target song is instrumental.",
+                    "example": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "upsampled",
+                    "request_id"
+                  ],
+                  "properties": {
+                    "upsampled": {
+                      "type": "string",
+                      "description": "Expanded style tag prompt.",
+                      "example": "cabaret jazz, tango spoken word, orchestral ballad, 92 BPM"
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "description": "Suno request ID.",
+                      "example": "6f481925-1f5c-457d-9aa6-3c5cd3c0646e"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/clip/{id}": {
       "get": {
         "summary": "Get clip information by path ID.",

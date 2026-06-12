@@ -107,6 +107,8 @@ Suno API currently mainly implements the following APIs:
 - \`/api/gen/{id}/set_metadata\`: Set clip metadata
 - \`/api/gen/{id}/set_audio_description\`: Accept generated audio description
 - \`/api/gen/{id}/waveform-aggregates\`: Get waveform aggregates
+- \`/api/prompts/suggestions\`: Get prompt suggestions
+- \`/api/prompts/upsample\`: Upsample prompt style tags
 - \`/api/generate_lyrics\`: Generate lyrics based on prompt
 - \`/api/get\`: Get music list
 - \`/api/get?ids=\`: Get music Info by id, separate multiple id with ",".
