@@ -814,7 +814,10 @@ class SunoApi {
       if (options?.gpt_description_prompt !== undefined) {
         payload.gpt_description_prompt = options.gpt_description_prompt;
       }
-    } else {
+    } else if (
+      options?.gpt_description_prompt === undefined &&
+      prompt !== ''
+    ) {
       payload.gpt_description_prompt = prompt;
     }
     logger.info(
