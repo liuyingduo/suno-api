@@ -3,7 +3,6 @@ import {
   Browser,
   BrowserContext,
   chromium,
-  ConsoleMessage,
   Locator,
   Page,
   Request,
@@ -11,8 +10,11 @@ import {
 import * as cookie from 'cookie';
 import { YesCaptchaAction, YesCaptchaClient } from '@/lib/yesCaptchaClient';
 import { sleep } from '@/lib/utils';
-import { mkdir, writeFile } from 'node:fs/promises';
-import path from 'node:path';
+import { FeishuNotifier } from '@/lib/feishuNotifier';
+import {
+  formatConsoleMessage,
+  saveCaptchaFailureDiagnostics
+} from '@/lib/captchaDiagnostics';
 
 const logger = pino();
 const SUNO_CREATE_URL = 'https://suno.com/create';
@@ -23,7 +25,6 @@ const INVALID_COOKIE_RE = /[\x00-\x1f\x7f;,"]/;
 const PROMPT_TEXTAREA_XPATH =
   '//*[@id="main-container"]/div/div/div/div/div/div[3]/div/div[2]/div[3]/div/div[2]/div/div[2]/div/div[1]/div[1]/div[1]/textarea';
 const CREATE_SONG_BUTTON_XPATH = '//button[@aria-label="Create song"]';
-const DIAGNOSTIC_DIR = path.join(process.cwd(), 'logs', 'captcha-diagnostics');
 
 interface SunoCaptchaSolverOptions {
   cookies: Record<string, string | undefined>;
@@ -46,6 +47,7 @@ function isHcaptchaRequestUrl(url: string): boolean {
 
 export class SunoCaptchaSolver {
   private readonly yesCaptcha = new YesCaptchaClient(process.env.YESCAPTCHA_KEY ?? '');
+  private readonly feishuNotifier = new FeishuNotifier();
   private readonly consoleMessages: string[] = [];
   private tokenCaptured = false;
 
@@ -59,6 +61,7 @@ export class SunoCaptchaSolver {
     const page = await context.newPage();
     this.attachConsoleLogging(page);
     const abortController = new AbortController();
+    let failure: unknown;
 
     try {
       const tokenPromise = this.captureGenerateToken(page, abortController);
@@ -76,9 +79,12 @@ export class SunoCaptchaSolver {
         });
       logger.info('SunoCaptchaSolver: waiting for generate token capture');
       return await tokenPromise;
+    } catch (error) {
+      failure = error;
+      throw error;
     } finally {
       if (!this.tokenCaptured) {
-        await this.saveFailureDiagnostics(page);
+        await this.handleFailureDiagnostics(page, failure);
       }
       abortController.abort();
       await browser.close();
@@ -134,12 +140,8 @@ export class SunoCaptchaSolver {
 
   private attachConsoleLogging(page: Page): void {
     page.on('console', (message) => {
-      this.consoleMessages.push(this.formatConsoleMessage(message));
+      this.consoleMessages.push(formatConsoleMessage(message));
     });
-  }
-
-  private formatConsoleMessage(message: ConsoleMessage): string {
-    return `[${message.type()}] ${message.text()}`;
   }
 
   private toPlaywrightCookies() {
@@ -374,47 +376,52 @@ export class SunoCaptchaSolver {
     });
   }
 
-  private async saveFailureDiagnostics(page: Page): Promise<void> {
+  private async handleFailureDiagnostics(page: Page, error: unknown): Promise<void> {
     try {
-      await mkdir(DIAGNOSTIC_DIR, { recursive: true });
-      const prefix = path.join(DIAGNOSTIC_DIR, this.createDiagnosticName());
-      const fingerprint = await this.readBrowserFingerprint(page);
-      await Promise.all([
-        page.screenshot({ path: `${prefix}.png`, fullPage: true }),
-        writeFile(`${prefix}.html`, await page.content(), 'utf8'),
-        writeFile(`${prefix}.json`, JSON.stringify({
-          url: page.url(),
-          userAgent: this.options.userAgent,
-          fingerprint,
-          consoleMessages: this.consoleMessages
-        }, null, 2), 'utf8')
-      ]);
-      logger.warn(`SunoCaptchaSolver: saved failure diagnostics to ${prefix}.*`);
-    } catch (error) {
-      logger.warn(`SunoCaptchaSolver: failed to save diagnostics: ${error instanceof Error ? error.message : error}`);
+      const files = await saveCaptchaFailureDiagnostics({
+        page,
+        userAgent: this.options.userAgent,
+        consoleMessages: this.consoleMessages,
+        error
+      });
+      logger.warn(`SunoCaptchaSolver: saved failure diagnostics to ${files.prefix}.*`);
+      await this.notifyFailure(files.screenshotPath, files.jsonPath, error);
+    } catch (diagnosticError) {
+      logger.warn(
+        `SunoCaptchaSolver: failed to save diagnostics: ${this.formatError(diagnosticError)}`
+      );
     }
   }
 
-  private createDiagnosticName(): string {
-    return `captcha-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+  private async notifyFailure(
+    screenshotPath: string,
+    jsonPath: string,
+    error: unknown
+  ): Promise<void> {
+    if (!this.feishuNotifier.enabled) {
+      return;
+    }
+    try {
+      await this.feishuNotifier.notify({
+        title: 'SunoCaptchaSolver failed',
+        text: [
+          `Error: ${this.formatError(error)}`,
+          `Screenshot: ${screenshotPath}`,
+          `Diagnostics: ${jsonPath}`
+        ].join('\n'),
+        imagePath: screenshotPath
+      });
+      logger.info('SunoCaptchaSolver: sent failure diagnostics to Feishu');
+    } catch (notifyError) {
+      logger.warn(`SunoCaptchaSolver: failed to notify Feishu: ${this.formatError(notifyError)}`);
+    }
   }
 
-  private async readBrowserFingerprint(page: Page): Promise<Record<string, unknown>> {
-    return page.evaluate(() => ({
-      userAgent: navigator.userAgent,
-      platform: navigator.platform,
-      webdriver: navigator.webdriver,
-      languages: navigator.languages,
-      language: navigator.language,
-      hardwareConcurrency: navigator.hardwareConcurrency,
-      deviceMemory: 'deviceMemory' in navigator ? navigator.deviceMemory : undefined,
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      viewport: {
-        width: window.innerWidth,
-        height: window.innerHeight,
-        devicePixelRatio: window.devicePixelRatio
-      }
-    }));
+  private formatError(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+    return String(error);
   }
 }
 
