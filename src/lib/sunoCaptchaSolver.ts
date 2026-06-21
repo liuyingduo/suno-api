@@ -3,6 +3,7 @@ import {
   Browser,
   BrowserContext,
   chromium,
+  ConsoleMessage,
   Locator,
   Page,
   Request,
@@ -10,6 +11,8 @@ import {
 import * as cookie from 'cookie';
 import { YesCaptchaAction, YesCaptchaClient } from '@/lib/yesCaptchaClient';
 import { sleep } from '@/lib/utils';
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 
 const logger = pino();
 const SUNO_CREATE_URL = 'https://suno.com/create';
@@ -20,6 +23,7 @@ const INVALID_COOKIE_RE = /[\x00-\x1f\x7f;,"]/;
 const PROMPT_TEXTAREA_XPATH =
   '//*[@id="main-container"]/div/div/div/div/div/div[3]/div/div[2]/div[3]/div/div[2]/div/div[2]/div/div[1]/div[1]/div[1]/textarea';
 const CREATE_SONG_BUTTON_XPATH = '//button[@aria-label="Create song"]';
+const DIAGNOSTIC_DIR = path.join(process.cwd(), 'logs', 'captcha-diagnostics');
 
 interface SunoCaptchaSolverOptions {
   cookies: Record<string, string | undefined>;
@@ -42,6 +46,8 @@ function isHcaptchaRequestUrl(url: string): boolean {
 
 export class SunoCaptchaSolver {
   private readonly yesCaptcha = new YesCaptchaClient(process.env.YESCAPTCHA_KEY ?? '');
+  private readonly consoleMessages: string[] = [];
+  private tokenCaptured = false;
 
   constructor(private readonly options: SunoCaptchaSolverOptions) {}
 
@@ -51,6 +57,7 @@ export class SunoCaptchaSolver {
     const context = await this.createContext(browser);
     this.attachNetworkLogging(context);
     const page = await context.newPage();
+    this.attachConsoleLogging(page);
     const abortController = new AbortController();
 
     try {
@@ -70,6 +77,9 @@ export class SunoCaptchaSolver {
       logger.info('SunoCaptchaSolver: waiting for generate token capture');
       return await tokenPromise;
     } finally {
+      if (!this.tokenCaptured) {
+        await this.saveFailureDiagnostics(page);
+      }
       abortController.abort();
       await browser.close();
       logger.info('SunoCaptchaSolver: browser closed');
@@ -120,6 +130,16 @@ export class SunoCaptchaSolver {
       }
       logger.info(`SunoCaptchaSolver response: ${response.status()} ${url}`);
     });
+  }
+
+  private attachConsoleLogging(page: Page): void {
+    page.on('console', (message) => {
+      this.consoleMessages.push(this.formatConsoleMessage(message));
+    });
+  }
+
+  private formatConsoleMessage(message: ConsoleMessage): string {
+    return `[${message.type()}] ${message.text()}`;
   }
 
   private toPlaywrightCookies() {
@@ -224,6 +244,7 @@ export class SunoCaptchaSolver {
           await route.abort();
           clearTimeout(timeout);
           abortController.abort();
+          this.tokenCaptured = true;
           resolve(this.extractCaptchaResult(request));
         } catch (error) {
           clearTimeout(timeout);
@@ -351,6 +372,49 @@ export class SunoCaptchaSolver {
       page.on('requestfailed', onRequestFinished);
       signal.addEventListener('abort', onAbort, { once: true });
     });
+  }
+
+  private async saveFailureDiagnostics(page: Page): Promise<void> {
+    try {
+      await mkdir(DIAGNOSTIC_DIR, { recursive: true });
+      const prefix = path.join(DIAGNOSTIC_DIR, this.createDiagnosticName());
+      const fingerprint = await this.readBrowserFingerprint(page);
+      await Promise.all([
+        page.screenshot({ path: `${prefix}.png`, fullPage: true }),
+        writeFile(`${prefix}.html`, await page.content(), 'utf8'),
+        writeFile(`${prefix}.json`, JSON.stringify({
+          url: page.url(),
+          userAgent: this.options.userAgent,
+          fingerprint,
+          consoleMessages: this.consoleMessages
+        }, null, 2), 'utf8')
+      ]);
+      logger.warn(`SunoCaptchaSolver: saved failure diagnostics to ${prefix}.*`);
+    } catch (error) {
+      logger.warn(`SunoCaptchaSolver: failed to save diagnostics: ${error instanceof Error ? error.message : error}`);
+    }
+  }
+
+  private createDiagnosticName(): string {
+    return `captcha-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+  }
+
+  private async readBrowserFingerprint(page: Page): Promise<Record<string, unknown>> {
+    return page.evaluate(() => ({
+      userAgent: navigator.userAgent,
+      platform: navigator.platform,
+      webdriver: navigator.webdriver,
+      languages: navigator.languages,
+      language: navigator.language,
+      hardwareConcurrency: navigator.hardwareConcurrency,
+      deviceMemory: 'deviceMemory' in navigator ? navigator.deviceMemory : undefined,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      viewport: {
+        width: window.innerWidth,
+        height: window.innerHeight,
+        devicePixelRatio: window.devicePixelRatio
+      }
+    }));
   }
 }
 

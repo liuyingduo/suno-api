@@ -1,5 +1,4 @@
 import axios, { AxiosInstance } from 'axios';
-import UserAgent from 'user-agents';
 import pino from 'pino';
 import { sleep } from '@/lib/utils';
 import * as cookie from 'cookie';
@@ -7,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { ensureLoaded, getAccountById, pickAccount, updateAccountCookie } from '@/lib/accountStore';
 import { recordRequest } from '@/lib/requestMonitor';
 import { SunoCaptchaSolver } from '@/lib/sunoCaptchaSolver';
+import { createBrowserUserAgent } from '@/lib/browserFingerprint';
 
 // sunoApi instance caching
 const globalForSunoApi = global as unknown as { sunoApiCache?: Map<string, SunoApi> };
@@ -215,7 +215,7 @@ class SunoApi {
 
   constructor(cookies: string, accountId?: string) {
     this.accountId = accountId;
-    this.userAgent = new UserAgent(/Macintosh/).random().toString(); // Usually Mac systems get less amount of CAPTCHAs
+    this.userAgent = createBrowserUserAgent();
     this.cookies = cookie.parse(cookies);
     this.deviceId = this.cookies.ajs_anonymous_id || randomUUID();
     this.client = axios.create({
