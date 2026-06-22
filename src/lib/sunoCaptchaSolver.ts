@@ -221,8 +221,53 @@ export class SunoCaptchaSolver {
       },
       { timeout: 60_000 }
     );
+    logger.info('SunoCaptchaSolver: Create song button enabled; waiting 5s before click');
+    await page.waitForTimeout(5_000);
+    await this.logCreateButtonDiagnostics(createButton);
     logger.info('SunoCaptchaSolver: clicking Create song button');
-    await createButton.click();
+    await this.logRequestsAfterClick(page, () => createButton.click());
+  }
+
+  private async logCreateButtonDiagnostics(createButton: Locator): Promise<void> {
+    const diagnostics = await createButton.evaluate((button) => ({
+      text: button.textContent,
+      disabled: (button as HTMLButtonElement).disabled,
+      ariaDisabled: button.getAttribute('aria-disabled'),
+      dataTriggerDisabled: button.getAttribute('data-trigger-disabled'),
+      id: button.id,
+      className: button.className,
+      rect: button.getBoundingClientRect().toJSON()
+    }));
+    logger.info(`SunoCaptchaSolver: Create song button diagnostics ${JSON.stringify(diagnostics)}`);
+  }
+
+  private async logRequestsAfterClick(page: Page, click: () => Promise<void>): Promise<void> {
+    const onRequest = (request: Request) => {
+      if (!this.isCaptchaDiagnosticUrl(request.url())) {
+        return;
+      }
+      logger.info(`SunoCaptchaSolver after-click request: ${request.method()} ${request.url()}`);
+    };
+    const onResponse = (response: import('playwright').Response) => {
+      if (!this.isCaptchaDiagnosticUrl(response.url())) {
+        return;
+      }
+      logger.info(`SunoCaptchaSolver after-click response: ${response.status()} ${response.url()}`);
+    };
+
+    page.on('request', onRequest);
+    page.on('response', onResponse);
+    try {
+      await click();
+      await page.waitForTimeout(15_000);
+    } finally {
+      page.off('request', onRequest);
+      page.off('response', onResponse);
+    }
+  }
+
+  private isCaptchaDiagnosticUrl(url: string): boolean {
+    return isGenerateRequestUrl(url) || isHcaptchaRequestUrl(url);
   }
 
   private async closePopups(page: Page): Promise<void> {
