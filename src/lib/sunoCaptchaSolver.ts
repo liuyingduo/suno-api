@@ -1,25 +1,18 @@
 import pino from 'pino';
-import {
-  Browser,
-  BrowserContext,
-  chromium,
-  Locator,
-  Page,
-  Request,
-} from 'playwright';
-import * as cookie from 'cookie';
+import { Browser, BrowserContext, chromium, Locator, Page, Request } from 'playwright';
+import path from 'node:path';
 import { YesCaptchaAction, YesCaptchaClient } from '@/lib/yesCaptchaClient';
 import { sleep } from '@/lib/utils';
 import { FeishuNotifier } from '@/lib/feishuNotifier';
-import {
-  formatConsoleMessage,
-  saveCaptchaFailureDiagnostics
-} from '@/lib/captchaDiagnostics';
+import { CaptchaDiagnosticFiles, formatConsoleMessage, saveCaptchaFailureDiagnostics } from '@/lib/captchaDiagnostics';
+import { notifyCaptchaFailure } from '@/lib/sunoCaptchaFailureNotifier';
+import { closeKnownPopups } from '@/lib/sunoPopupHandler';
 
 const logger = pino();
 const SUNO_CREATE_URL = 'https://suno.com/create';
 const GENERATE_URL_PART = '/api/generate/v2-web/';
 const CAPTCHA_TIMEOUT_MS = 180_000;
+const RECORD_VIDEO_DIR = path.join(process.cwd(), 'logs', 'captcha-videos');
 const HCAPTCHA_IMAGE_RE = /^https:\/\/img[a-zA-Z0-9]*\.hcaptcha\.com\/.*$/;
 const INVALID_COOKIE_RE = /[\x00-\x1f\x7f;,"]/;
 const PROMPT_TEXTAREA_XPATH =
@@ -83,11 +76,14 @@ export class SunoCaptchaSolver {
       failure = error;
       throw error;
     } finally {
-      if (!this.tokenCaptured) {
-        await this.handleFailureDiagnostics(page, failure);
-      }
+      const files = !this.tokenCaptured
+        ? await this.handleFailureDiagnostics(page, failure)
+        : undefined;
       abortController.abort();
-      await browser.close();
+      const videoPath = await this.closeBrowserWithVideoLog(page, browser);
+      if (!this.tokenCaptured && files) {
+        await this.notifyFailure(files, failure, videoPath);
+      }
       logger.info('SunoCaptchaSolver: browser closed');
     }
   }
@@ -113,6 +109,10 @@ export class SunoCaptchaSolver {
       userAgent: this.options.userAgent,
       locale: process.env.BROWSER_LOCALE,
       viewport: { width: 1280, height: 800 },
+      recordVideo: {
+        dir: RECORD_VIDEO_DIR,
+        size: { width: 1280, height: 800 }
+      },
       storageState: {
         cookies: this.toPlaywrightCookies(),
         origins: []
@@ -187,7 +187,7 @@ export class SunoCaptchaSolver {
 
   private async triggerCaptcha(page: Page): Promise<void> {
     logger.info('SunoCaptchaSolver: triggering captcha from create page');
-    await this.closePopups(page);
+    await closeKnownPopups(page);
     const textarea = page.locator(`xpath=${PROMPT_TEXTAREA_XPATH}`);
     logger.info('SunoCaptchaSolver: waiting for prompt textarea');
     await textarea.waitFor({ state: 'visible', timeout: 60_000 });
@@ -281,29 +281,6 @@ export class SunoCaptchaSolver {
 
   private isCaptchaDiagnosticUrl(url: string): boolean {
     return isGenerateRequestUrl(url) || isHcaptchaRequestUrl(url);
-  }
-
-  private async closePopups(page: Page): Promise<void> {
-    const popupButtons = [
-      page.locator('#onetrust-reject-all-handler'),
-      page.locator('#onetrust-accept-btn-handler'),
-      page.locator('#onetrust-close-btn-container button')
-    ];
-
-    for (const button of popupButtons) {
-      const visible = await button.first().isVisible({ timeout: 1_000 }).catch(() => false);
-      if (!visible) {
-        continue;
-      }
-      try {
-        await button.first().click({ timeout: 2_000 });
-      } catch (error) {
-        logger.warn(`SunoCaptchaSolver: failed to close popup: ${this.formatError(error)}`);
-        continue;
-      }
-      await page.waitForTimeout(300);
-      return;
-    }
   }
 
   private captureGenerateToken(page: Page, abortController: AbortController): Promise<CaptchaResult> {
@@ -449,7 +426,7 @@ export class SunoCaptchaSolver {
     });
   }
 
-  private async handleFailureDiagnostics(page: Page, error: unknown): Promise<void> {
+  private async handleFailureDiagnostics(page: Page, error: unknown): Promise<CaptchaDiagnosticFiles | undefined> {
     try {
       const files = await saveCaptchaFailureDiagnostics({
         page,
@@ -458,31 +435,42 @@ export class SunoCaptchaSolver {
         error
       });
       logger.warn(`SunoCaptchaSolver: saved failure diagnostics to ${files.prefix}.*`);
-      await this.notifyFailure(files.screenshotPath, files.jsonPath, error);
+      return files;
     } catch (diagnosticError) {
       logger.warn(
         `SunoCaptchaSolver: failed to save diagnostics: ${this.formatError(diagnosticError)}`
       );
+      return undefined;
     }
   }
 
-  private async notifyFailure(
-    screenshotPath: string,
-    jsonPath: string,
-    error: unknown
-  ): Promise<void> {
-    if (!this.feishuNotifier.enabled) {
-      return;
+  private async closeBrowserWithVideoLog(page: Page, browser: Browser): Promise<string | undefined> {
+    const video = page.video();
+    await browser.close();
+    if (!video) {
+      logger.warn('SunoCaptchaSolver: captcha recording unavailable');
+      return undefined;
     }
+
     try {
-      await this.feishuNotifier.notify({
-        title: 'SunoCaptchaSolver failed',
-        text: [
-          `Error: ${this.formatError(error)}`,
-          `Screenshot: ${screenshotPath}`,
-          `Diagnostics: ${jsonPath}`
-        ].join('\n'),
-        imagePath: screenshotPath
+      const videoPath = await video.path();
+      logger.warn(`SunoCaptchaSolver: captcha recording saved to ${videoPath}`);
+      return videoPath;
+    } catch (error) {
+      logger.warn(`SunoCaptchaSolver: failed to read captcha recording path: ${this.formatError(error)}`);
+      return undefined;
+    }
+  }
+
+  private async notifyFailure(files: CaptchaDiagnosticFiles, error: unknown, videoPath?: string): Promise<void> {
+    try {
+      await notifyCaptchaFailure({
+        error,
+        feishuNotifier: this.feishuNotifier,
+        formatError: this.formatError,
+        jsonPath: files.jsonPath,
+        screenshotPath: files.screenshotPath,
+        videoPath
       });
       logger.info('SunoCaptchaSolver: sent failure diagnostics to Feishu');
     } catch (notifyError) {
@@ -496,11 +484,4 @@ export class SunoCaptchaSolver {
     }
     return String(error);
   }
-}
-
-export function serializeCookieRecord(cookies: Record<string, string | undefined>): string {
-  return Object.entries(cookies)
-    .filter(([, value]) => value !== undefined)
-    .map(([key, value]) => cookie.serialize(key, value as string))
-    .join('; ');
 }
