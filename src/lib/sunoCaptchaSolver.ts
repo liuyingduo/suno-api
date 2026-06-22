@@ -236,7 +236,20 @@ export class SunoCaptchaSolver {
       dataTriggerDisabled: button.getAttribute('data-trigger-disabled'),
       id: button.id,
       className: button.className,
-      rect: button.getBoundingClientRect().toJSON()
+      rect: button.getBoundingClientRect().toJSON(),
+      centerElement: (() => {
+        const rect = button.getBoundingClientRect();
+        const element = document.elementFromPoint(
+          rect.left + rect.width / 2,
+          rect.top + rect.height / 2
+        );
+        return element && {
+          tagName: element.tagName,
+          text: element.textContent,
+          id: element.id,
+          className: element.className
+        };
+      })()
     }));
     logger.info(`SunoCaptchaSolver: Create song button diagnostics ${JSON.stringify(diagnostics)}`);
   }
@@ -271,9 +284,20 @@ export class SunoCaptchaSolver {
   }
 
   private async closePopups(page: Page): Promise<void> {
-    try {
-      await page.getByLabel('Close').click({ timeout: 2_000 });
-    } catch {
+    const popupButtons = [
+      page.getByRole('button', { name: 'Reject All' }),
+      page.getByRole('button', { name: 'Accept All Cookies' }),
+      page.locator('#onetrust-accept-btn-handler'),
+      page.getByLabel('Close')
+    ];
+
+    for (const button of popupButtons) {
+      const visible = await button.first().isVisible({ timeout: 1_000 }).catch(() => false);
+      if (!visible) {
+        continue;
+      }
+      await button.first().click({ timeout: 2_000 });
+      await page.waitForTimeout(300);
       return;
     }
   }
