@@ -4,9 +4,6 @@ interface NotifyCaptchaFailureInput {
   error: unknown;
   feishuNotifier: FeishuNotifier;
   formatError: (error: unknown) => string;
-  jsonPath: string;
-  screenshotPath: string;
-  videoPath?: string;
 }
 
 export async function notifyCaptchaFailure(input: NotifyCaptchaFailureInput): Promise<void> {
@@ -14,16 +11,10 @@ export async function notifyCaptchaFailure(input: NotifyCaptchaFailureInput): Pr
     return;
   }
 
-  const text = [
-    `Error: ${input.formatError(input.error)}`,
-    `Screenshot: ${input.screenshotPath}`,
-    `Diagnostics: ${input.jsonPath}`,
-    input.videoPath ? `Recording: ${input.videoPath}` : undefined
-  ].filter((line) => line !== undefined).join('\n');
+  const text = `Error: ${input.formatError(input.error)}`;
 
   await input.feishuNotifier.notify({
     title: 'SunoCaptchaSolver failed',
-    text,
-    imagePath: input.screenshotPath
+    text
   });
 }

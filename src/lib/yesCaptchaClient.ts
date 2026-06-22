@@ -1,9 +1,11 @@
 import axios, { AxiosInstance } from 'axios';
+import pino from 'pino';
 
 const CREATE_TASK_URL = 'https://api.yescaptcha.com/createTask';
 const GET_TASK_RESULT_URL = 'https://api.yescaptcha.com/getTaskResult';
 const DEFAULT_TIMEOUT_MS = 180_000;
 const DEFAULT_INTERVAL_MS = 3_000;
+const logger = pino();
 
 export interface YesCaptchaPoint {
   x: number;
@@ -62,12 +64,16 @@ export class YesCaptchaClient {
     queries: string[],
     question: string
   ): Promise<YesCaptchaAction[]> {
+    logger.info(
+      `YesCaptchaClient: creating HCaptchaClassification task with ${queries.length} queries, question: ${question}`
+    );
     const created = await this.createTask({
       type: 'HCaptchaClassification',
       queries,
       question
     });
     const result = created.status === 'ready' ? created : await this.waitForResult(created.taskId);
+    logger.info(`YesCaptchaClient: HCaptchaClassification solution ${JSON.stringify(result.solution)}`);
     const actions = this.extractActions(result.solution);
     if (actions.length === 0) {
       throw new Error('YesCaptcha returned no hCaptcha actions');
