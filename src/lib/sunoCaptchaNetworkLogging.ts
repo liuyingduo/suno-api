@@ -8,6 +8,9 @@ interface CaptchaNetworkLogger {
 const CAPTCHA_URL_PARTS = [
   'hcaptcha.com',
   'hcaptcha-endpoint-prod.suno.com',
+  'hcaptcha-assets-prod.suno.com',
+  'hcaptcha-imgs-prod.suno.com',
+  'hcaptcha-reportapi-prod.suno.com',
   'checksiteconfig',
   '/getcaptcha/',
   '/checkcaptcha/',
