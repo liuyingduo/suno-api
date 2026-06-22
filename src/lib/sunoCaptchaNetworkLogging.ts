@@ -58,7 +58,7 @@ export function attachCaptchaNetworkLogging(
   });
 }
 
-export async function logCaptchaRequestsAfterClick(
+export async function startCaptchaRequestLoggingAfterClick(
   page: Page,
   generateUrlPart: string,
   logger: CaptchaNetworkLogger,
@@ -88,14 +88,13 @@ export async function logCaptchaRequestsAfterClick(
   page.on('request', onRequest);
   page.on('response', onResponse);
   page.on('requestfailed', onRequestFailed);
-  try {
-    await click();
-    await page.waitForTimeout(15_000);
-  } finally {
+
+  await click();
+  page.waitForTimeout(15_000).finally(() => {
     page.off('request', onRequest);
     page.off('response', onResponse);
     page.off('requestfailed', onRequestFailed);
-  }
+  });
 }
 
 function formatRequest(request: Request): string {

@@ -8,7 +8,7 @@ import { CaptchaDiagnosticFiles, formatConsoleMessage, saveCaptchaFailureDiagnos
 import { notifyCaptchaFailure } from '@/lib/sunoCaptchaFailureNotifier';
 import {
   attachCaptchaNetworkLogging,
-  logCaptchaRequestsAfterClick
+  startCaptchaRequestLoggingAfterClick
 } from '@/lib/sunoCaptchaNetworkLogging';
 import { closeKnownPopups } from '@/lib/sunoPopupHandler';
 
@@ -203,7 +203,7 @@ export class SunoCaptchaSolver {
     await page.waitForTimeout(5_000);
     await this.logCreateButtonDiagnostics(createButton);
     logger.info('SunoCaptchaSolver: clicking Create song button');
-    await logCaptchaRequestsAfterClick(page, GENERATE_URL_PART, logger, () => createButton.click());
+    await startCaptchaRequestLoggingAfterClick(page, GENERATE_URL_PART, logger, () => createButton.click());
   }
 
   private async logCreateButtonDiagnostics(createButton: Locator): Promise<void> {
