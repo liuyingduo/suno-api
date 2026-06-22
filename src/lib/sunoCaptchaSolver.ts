@@ -285,10 +285,9 @@ export class SunoCaptchaSolver {
 
   private async closePopups(page: Page): Promise<void> {
     const popupButtons = [
-      page.getByRole('button', { name: 'Reject All' }),
-      page.getByRole('button', { name: 'Accept All Cookies' }),
+      page.locator('#onetrust-reject-all-handler'),
       page.locator('#onetrust-accept-btn-handler'),
-      page.getByLabel('Close')
+      page.locator('#onetrust-close-btn-container button')
     ];
 
     for (const button of popupButtons) {
@@ -296,7 +295,12 @@ export class SunoCaptchaSolver {
       if (!visible) {
         continue;
       }
-      await button.first().click({ timeout: 2_000 });
+      try {
+        await button.first().click({ timeout: 2_000 });
+      } catch (error) {
+        logger.warn(`SunoCaptchaSolver: failed to close popup: ${this.formatError(error)}`);
+        continue;
+      }
       await page.waitForTimeout(300);
       return;
     }
