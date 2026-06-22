@@ -6,6 +6,10 @@ import { sleep } from '@/lib/utils';
 import { FeishuNotifier } from '@/lib/feishuNotifier';
 import { CaptchaDiagnosticFiles, formatConsoleMessage, saveCaptchaFailureDiagnostics } from '@/lib/captchaDiagnostics';
 import { notifyCaptchaFailure } from '@/lib/sunoCaptchaFailureNotifier';
+import {
+  attachCaptchaNetworkLogging,
+  logCaptchaRequestsAfterClick
+} from '@/lib/sunoCaptchaNetworkLogging';
 import { closeKnownPopups } from '@/lib/sunoPopupHandler';
 
 const logger = pino();
@@ -30,14 +34,6 @@ interface CaptchaResult {
   authorizationToken?: string;
 }
 
-function isGenerateRequestUrl(url: string): boolean {
-  return url.includes(GENERATE_URL_PART);
-}
-
-function isHcaptchaRequestUrl(url: string): boolean {
-  return url.includes('hcaptcha.com') || url.includes('checksiteconfig') || url.includes('/getcaptcha/');
-}
-
 export class SunoCaptchaSolver {
   private readonly yesCaptcha = new YesCaptchaClient(process.env.YESCAPTCHA_KEY ?? '');
   private readonly feishuNotifier = new FeishuNotifier();
@@ -50,7 +46,7 @@ export class SunoCaptchaSolver {
     logger.info('SunoCaptchaSolver: launching browser');
     const browser = await this.launchBrowser();
     const context = await this.createContext(browser);
-    this.attachNetworkLogging(context);
+    attachCaptchaNetworkLogging(context, GENERATE_URL_PART, logger);
     const page = await context.newPage();
     this.attachConsoleLogging(page);
     const abortController = new AbortController();
@@ -117,24 +113,6 @@ export class SunoCaptchaSolver {
         cookies: this.toPlaywrightCookies(),
         origins: []
       }
-    });
-  }
-
-  private attachNetworkLogging(context: BrowserContext): void {
-    context.on('request', (request) => {
-      const url = request.url();
-      if (!isGenerateRequestUrl(url) && !isHcaptchaRequestUrl(url)) {
-        return;
-      }
-      logger.info(`SunoCaptchaSolver request: ${request.method()} ${url}`);
-    });
-
-    context.on('response', (response) => {
-      const url = response.url();
-      if (!isGenerateRequestUrl(url) && !isHcaptchaRequestUrl(url)) {
-        return;
-      }
-      logger.info(`SunoCaptchaSolver response: ${response.status()} ${url}`);
     });
   }
 
@@ -225,7 +203,7 @@ export class SunoCaptchaSolver {
     await page.waitForTimeout(5_000);
     await this.logCreateButtonDiagnostics(createButton);
     logger.info('SunoCaptchaSolver: clicking Create song button');
-    await this.logRequestsAfterClick(page, () => createButton.click());
+    await logCaptchaRequestsAfterClick(page, GENERATE_URL_PART, logger, () => createButton.click());
   }
 
   private async logCreateButtonDiagnostics(createButton: Locator): Promise<void> {
@@ -252,35 +230,6 @@ export class SunoCaptchaSolver {
       })()
     }));
     logger.info(`SunoCaptchaSolver: Create song button diagnostics ${JSON.stringify(diagnostics)}`);
-  }
-
-  private async logRequestsAfterClick(page: Page, click: () => Promise<void>): Promise<void> {
-    const onRequest = (request: Request) => {
-      if (!this.isCaptchaDiagnosticUrl(request.url())) {
-        return;
-      }
-      logger.info(`SunoCaptchaSolver after-click request: ${request.method()} ${request.url()}`);
-    };
-    const onResponse = (response: import('playwright').Response) => {
-      if (!this.isCaptchaDiagnosticUrl(response.url())) {
-        return;
-      }
-      logger.info(`SunoCaptchaSolver after-click response: ${response.status()} ${response.url()}`);
-    };
-
-    page.on('request', onRequest);
-    page.on('response', onResponse);
-    try {
-      await click();
-      await page.waitForTimeout(15_000);
-    } finally {
-      page.off('request', onRequest);
-      page.off('response', onResponse);
-    }
-  }
-
-  private isCaptchaDiagnosticUrl(url: string): boolean {
-    return isGenerateRequestUrl(url) || isHcaptchaRequestUrl(url);
   }
 
   private captureGenerateToken(page: Page, abortController: AbortController): Promise<CaptchaResult> {
