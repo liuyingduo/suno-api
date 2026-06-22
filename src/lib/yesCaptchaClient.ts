@@ -12,6 +12,7 @@ export interface YesCaptchaPoint {
 
 export type YesCaptchaAction =
   | { type: 'click'; point: YesCaptchaPoint }
+  | { type: 'clickTile'; index: number }
   | { type: 'drag'; start: YesCaptchaPoint; end: YesCaptchaPoint };
 
 interface CreateTaskResponse {
@@ -57,13 +58,13 @@ export class YesCaptchaClient {
     this.client = axios.create({ timeout: 30_000 });
   }
 
-  public async solveHcaptchaByImage(
-    imageBase64: string,
+  public async solveHcaptchaByImages(
+    queries: string[],
     question: string
   ): Promise<YesCaptchaAction[]> {
     const created = await this.createTask({
       type: 'HCaptchaClassification',
-      image: imageBase64,
+      queries,
       question
     });
     const result = created.status === 'ready' ? created : await this.waitForResult(created.taskId);
@@ -121,13 +122,18 @@ export class YesCaptchaClient {
       return boxPoints.map((point) => ({ type: 'click', point }));
     }
 
+    const objectIndexes = this.extractObjectIndexes(solution?.objects);
+    if (objectIndexes.length) {
+      return objectIndexes.map((index) => ({ type: 'clickTile', index }));
+    }
+
     const rawPoints = solution?.coordinates ?? solution?.pointJson;
     if (rawPoints?.length) {
       return rawPoints.map((point) => ({ type: 'click', point: this.toPoint([point.x, point.y]) }));
     }
 
     if (solution?.top_k?.length) {
-      return solution.top_k.map((index) => ({ type: 'click', point: this.indexToGridPoint(index) }));
+      return solution.top_k.map((index) => ({ type: 'clickTile', index }));
     }
     return [];
   }
@@ -147,13 +153,18 @@ export class YesCaptchaClient {
     return points;
   }
 
-  private indexToGridPoint(index: number): YesCaptchaPoint {
-    const col = index % 3;
-    const row = Math.floor(index / 3);
-    return {
-      x: col * 100 + 50,
-      y: row * 100 + 50
-    };
+  private extractObjectIndexes(objects?: Array<boolean | number>): number[] {
+    const indexes: number[] = [];
+    if (!objects?.length) {
+      return indexes;
+    }
+    for (let index = 0; index < objects.length; index++) {
+      const value = objects[index];
+      if (value === true || value === 1) {
+        indexes.push(index);
+      }
+    }
+    return indexes;
   }
 
   private toPoint(value: [number, number]): YesCaptchaPoint {

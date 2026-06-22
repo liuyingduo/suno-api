@@ -277,8 +277,8 @@ export class SunoCaptchaSolver {
       await this.waitForHcaptchaImages(page, signal);
       const prompt = await this.readChallengePrompt(challenge);
       logger.info(`SunoCaptchaSolver: solving hCaptcha challenge: ${prompt}`);
-      const actions = await this.yesCaptcha.solveHcaptchaByImage(
-        await this.screenshotChallenge(challenge),
+      const actions = await this.yesCaptcha.solveHcaptchaByImages(
+        await this.screenshotChallengeImages(challenge),
         prompt
       );
       await this.performActions(challenge, actions);
@@ -291,9 +291,19 @@ export class SunoCaptchaSolver {
     return prompt.trim();
   }
 
-  private async screenshotChallenge(challenge: Locator): Promise<string> {
-    const image = await challenge.screenshot({ timeout: 10_000 });
-    return image.toString('base64');
+  private async screenshotChallengeImages(challenge: Locator): Promise<string[]> {
+    const images = challenge.locator('.task-image');
+    const count = await images.count();
+    if (count === 0) {
+      throw new Error('No hCaptcha task images found');
+    }
+
+    const screenshots: string[] = [];
+    for (let index = 0; index < count; index++) {
+      const image = await images.nth(index).screenshot({ timeout: 10_000 });
+      screenshots.push(image.toString('base64'));
+    }
+    return screenshots;
   }
 
   private async performActions(challenge: Locator, actions: YesCaptchaAction[]): Promise<void> {
@@ -305,6 +315,8 @@ export class SunoCaptchaSolver {
     for (const action of actions) {
       if (action.type === 'click') {
         await challenge.click({ force: true, position: action.point });
+      } else if (action.type === 'clickTile') {
+        await this.clickChallengeTile(challenge, action.index);
       } else {
         await challenge.page().mouse.move(box.x + action.start.x, box.y + action.start.y);
         await challenge.page().mouse.down();
@@ -314,6 +326,21 @@ export class SunoCaptchaSolver {
       }
       await sleep(0.2);
     }
+  }
+
+  private async clickChallengeTile(challenge: Locator, index: number): Promise<void> {
+    const challengeBox = await challenge.boundingBox();
+    const tileBox = await challenge.locator('.task-image').nth(index).boundingBox();
+    if (!challengeBox || !tileBox) {
+      throw new Error(`hCaptcha task image ${index} boundingBox is null`);
+    }
+    await challenge.click({
+      force: true,
+      position: {
+        x: tileBox.x - challengeBox.x + tileBox.width / 2,
+        y: tileBox.y - challengeBox.y + tileBox.height / 2
+      }
+    });
   }
 
   private async submitChallenge(button: Locator): Promise<void> {
