@@ -11,6 +11,7 @@ import {
   startCaptchaRequestLoggingAfterClick
 } from '@/lib/sunoCaptchaNetworkLogging';
 import { closeKnownPopups } from '@/lib/sunoPopupHandler';
+import { HcaptchaDragDropProtocolStore, renderDragDropChallengeImage } from '@/lib/hcaptchaDragDropProtocol';
 
 const logger = pino();
 const SUNO_CREATE_URL = 'https://suno.com/create';
@@ -49,6 +50,8 @@ export class SunoCaptchaSolver {
     attachCaptchaNetworkLogging(context, GENERATE_URL_PART, logger);
     const page = await context.newPage();
     this.attachConsoleLogging(page);
+    const dragDropStore = new HcaptchaDragDropProtocolStore(logger);
+    dragDropStore.attach(page);
     const abortController = new AbortController();
     let failure: unknown;
 
@@ -62,7 +65,7 @@ export class SunoCaptchaSolver {
       });
       await this.waitForSunoReady(page);
       await this.triggerCaptcha(page);
-      await Promise.race([this.solveChallenges(page, abortController.signal), tokenPromise])
+      await Promise.race([this.solveChallenges(page, context, dragDropStore, abortController.signal), tokenPromise])
         .catch((error) => {
           logger.warn(`SunoCaptchaSolver: challenge loop ended before token capture: ${error?.message ?? error}`);
         });
@@ -270,7 +273,12 @@ export class SunoCaptchaSolver {
     };
   }
 
-  private async solveChallenges(page: Page, signal: AbortSignal): Promise<void> {
+  private async solveChallenges(
+    page: Page,
+    context: BrowserContext,
+    dragDropStore: HcaptchaDragDropProtocolStore,
+    signal: AbortSignal
+  ): Promise<void> {
     const frame = page.frameLocator('iframe[title*="hCaptcha"]');
     const challenge = frame.locator('.challenge-container');
     while (!signal.aborted) {
@@ -278,7 +286,7 @@ export class SunoCaptchaSolver {
       const prompt = await this.readChallengePrompt(challenge);
       logger.info(`SunoCaptchaSolver: solving hCaptcha challenge: ${prompt}`);
       const actions = await this.yesCaptcha.solveHcaptchaByImages(
-        await this.screenshotChallengeImages(challenge),
+        await this.readChallengeImages(challenge, context, dragDropStore),
         prompt
       );
       await this.performActions(challenge, actions);
@@ -291,11 +299,15 @@ export class SunoCaptchaSolver {
     return prompt.trim();
   }
 
-  private async screenshotChallengeImages(challenge: Locator): Promise<string[]> {
+  private async readChallengeImages(
+    challenge: Locator,
+    context: BrowserContext,
+    dragDropStore: HcaptchaDragDropProtocolStore
+  ): Promise<string[]> {
     const images = challenge.locator('.task-image');
     const count = await images.count();
     if (count === 0) {
-      throw new Error('No hCaptcha task images found');
+      return [await this.renderDragDropChallengeImage(context, dragDropStore)];
     }
 
     const screenshots: string[] = [];
@@ -304,6 +316,18 @@ export class SunoCaptchaSolver {
       screenshots.push(image.toString('base64'));
     }
     return screenshots;
+  }
+
+  private async renderDragDropChallengeImage(
+    context: BrowserContext,
+    dragDropStore: HcaptchaDragDropProtocolStore
+  ): Promise<string> {
+    const dragDropChallenge = dragDropStore.getChallenge();
+    if (!dragDropChallenge) {
+      throw new Error('No hCaptcha drag-drop protocol challenge found');
+    }
+    logger.info('SunoCaptchaSolver: rendering image_drag_drop challenge from protocol data');
+    return renderDragDropChallengeImage(context, dragDropChallenge);
   }
 
   private async performActions(challenge: Locator, actions: YesCaptchaAction[]): Promise<void> {
