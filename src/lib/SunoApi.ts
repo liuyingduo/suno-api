@@ -178,7 +178,7 @@ function mergeDefinedGenerateOptions(
 
   for (const key of OPTIONAL_GENERATE_KEYS) {
     const value = source[key];
-    if (value !== undefined) {
+    if (value !== undefined && value !== null) {
       target[key] = value;
     }
   }

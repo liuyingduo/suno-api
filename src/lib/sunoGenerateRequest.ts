@@ -134,12 +134,13 @@ function normalizeGenerateOptions(
 ) {
   const metadata = { ...(options.metadata ?? {}) };
   applySoundConfigShortcuts(metadata, body);
+  const hasCoverClipId = isNonEmptyString(body.cover_clip_id);
 
   if (body.task === 'sound') {
     options.task = 'sound';
     metadata.create_mode = metadata.create_mode ?? 'custom';
   }
-  if (body.task === 'cover' || body.cover_clip_id !== undefined) {
+  if (body.task === 'cover' || hasCoverClipId) {
     options.task = 'cover';
     options.generation_type = options.generation_type ?? 'SIMPLE_REMIX';
     options.override_fields = options.override_fields ?? ['prompt'];
@@ -159,7 +160,7 @@ export function getSunoGenerateModeRequest(
 
   const task = options.task ?? body.task;
   const isSound = task === 'sound';
-  const isCover = task === 'cover' || body.cover_clip_id !== undefined;
+  const isCover = task === 'cover' || isNonEmptyString(body.cover_clip_id);
   const isCustom = isSound || isCover || body.tags !== undefined || body.title !== undefined;
 
   return {
@@ -173,4 +174,8 @@ export function getSunoGenerateModeRequest(
     options,
     isCustom
   };
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
 }
