@@ -11,7 +11,7 @@ import {
   startCaptchaRequestLoggingAfterClick
 } from '@/lib/sunoCaptchaNetworkLogging';
 import { closeKnownPopups } from '@/lib/sunoPopupHandler';
-import { HcaptchaDragDropProtocolStore, renderDragDropChallengeImage } from '@/lib/hcaptchaDragDropProtocol';
+import { saveCaptchaChallengeSnapshot } from '@/lib/captchaChallengeSnapshot';
 
 const logger = pino();
 const SUNO_CREATE_URL = 'https://suno.com/create';
@@ -50,8 +50,6 @@ export class SunoCaptchaSolver {
     attachCaptchaNetworkLogging(context, GENERATE_URL_PART, logger);
     const page = await context.newPage();
     this.attachConsoleLogging(page);
-    const dragDropStore = new HcaptchaDragDropProtocolStore(logger);
-    dragDropStore.attach(page);
     const abortController = new AbortController();
     let failure: unknown;
 
@@ -65,7 +63,7 @@ export class SunoCaptchaSolver {
       });
       await this.waitForSunoReady(page);
       await this.triggerCaptcha(page);
-      await Promise.race([this.solveChallenges(page, context, dragDropStore, abortController.signal), tokenPromise])
+      await Promise.race([this.solveChallenges(page, abortController.signal), tokenPromise])
         .catch((error) => {
           logger.warn(`SunoCaptchaSolver: challenge loop ended before token capture: ${error?.message ?? error}`);
         });
@@ -75,9 +73,7 @@ export class SunoCaptchaSolver {
       failure = error;
       throw error;
     } finally {
-      const files = !this.tokenCaptured
-        ? await this.handleFailureDiagnostics(page, failure)
-        : undefined;
+      const files = !this.tokenCaptured ? await this.handleFailureDiagnostics(page, failure) : undefined;
       abortController.abort();
       const videoPath = await this.closeBrowserWithVideoLog(page, browser);
       if (!this.tokenCaptured) {
@@ -273,22 +269,15 @@ export class SunoCaptchaSolver {
     };
   }
 
-  private async solveChallenges(
-    page: Page,
-    context: BrowserContext,
-    dragDropStore: HcaptchaDragDropProtocolStore,
-    signal: AbortSignal
-  ): Promise<void> {
+  private async solveChallenges(page: Page, signal: AbortSignal): Promise<void> {
     const frame = page.frameLocator('iframe[title*="hCaptcha"]');
     const challenge = frame.locator('.challenge-container');
     while (!signal.aborted) {
-      await this.waitForHcaptchaImages(page, signal);
+      await this.waitForVisibleChallenge(page, challenge, signal);
       const prompt = await this.readChallengePrompt(challenge);
       logger.info(`SunoCaptchaSolver: solving hCaptcha challenge: ${prompt}`);
-      const actions = await this.yesCaptcha.solveHcaptchaByImages(
-        await this.readChallengeImages(challenge, context, dragDropStore),
-        prompt
-      );
+      await this.saveChallengeSnapshot(page, challenge, prompt);
+      const actions = await this.solveVisibleChallenge(challenge, prompt);
       await this.performActions(challenge, actions);
       await this.submitChallenge(frame.locator('.button-submit'));
     }
@@ -299,35 +288,46 @@ export class SunoCaptchaSolver {
     return prompt.trim();
   }
 
-  private async readChallengeImages(
+  private async saveChallengeSnapshot(page: Page, challenge: Locator, prompt: string): Promise<void> {
+    try {
+      await saveCaptchaChallengeSnapshot({ page, challenge, prompt, logger });
+    } catch (error) {
+      logger.warn(`SunoCaptchaSolver: failed to save hCaptcha challenge snapshot: ${this.formatError(error)}`);
+    }
+  }
+
+  private async waitForVisibleChallenge(
+    page: Page,
     challenge: Locator,
-    context: BrowserContext,
-    dragDropStore: HcaptchaDragDropProtocolStore
-  ): Promise<string[]> {
-    const images = challenge.locator('.task-image');
-    const count = await images.count();
-    if (count === 0) {
-      return [await this.renderDragDropChallengeImage(context, dragDropStore)];
+    signal: AbortSignal
+  ): Promise<void> {
+    await challenge.waitFor({ state: 'visible', timeout: 60_000 });
+    await this.waitForHcaptchaImages(page, signal);
+  }
+
+  private async solveVisibleChallenge(
+    challenge: Locator,
+    prompt: string
+  ): Promise<YesCaptchaAction[]> {
+    const images = await this.readChallengeImages(challenge);
+    if (images.length) {
+      return this.yesCaptcha.solveHcaptchaByImages(images, prompt);
     }
 
+    logger.info('SunoCaptchaSolver: no task-image tiles found; solving hCaptcha by challenge screenshot');
+    const screenshot = await challenge.screenshot({ timeout: 10_000 });
+    return this.yesCaptcha.solveHcaptchaByScreenshot(screenshot.toString('base64'), prompt);
+  }
+
+  private async readChallengeImages(challenge: Locator): Promise<string[]> {
+    const images = challenge.locator('.task-image');
+    const count = await images.count();
     const screenshots: string[] = [];
     for (let index = 0; index < count; index++) {
       const image = await images.nth(index).screenshot({ timeout: 10_000 });
       screenshots.push(image.toString('base64'));
     }
     return screenshots;
-  }
-
-  private async renderDragDropChallengeImage(
-    context: BrowserContext,
-    dragDropStore: HcaptchaDragDropProtocolStore
-  ): Promise<string> {
-    const dragDropChallenge = dragDropStore.getChallenge();
-    if (!dragDropChallenge) {
-      throw new Error('No hCaptcha drag-drop protocol challenge found');
-    }
-    logger.info('SunoCaptchaSolver: rendering image_drag_drop challenge from protocol data');
-    return renderDragDropChallengeImage(context, dragDropChallenge);
   }
 
   private async performActions(challenge: Locator, actions: YesCaptchaAction[]): Promise<void> {
@@ -413,11 +413,12 @@ export class SunoCaptchaSolver {
       const initialTimeout = setTimeout(() => {
         if (!requestOccurred) {
           cleanup();
-          reject(new Error('No hCaptcha image request occurred within 60 seconds'));
+          logger.warn('SunoCaptchaSolver: no old-style hCaptcha image request observed; continuing');
+          resolve();
         } else {
           resetTimeout();
         }
-      }, 60_000);
+      }, 10_000);
 
       page.on('request', onRequest);
       page.on('requestfinished', onRequestFinished);
@@ -440,9 +441,7 @@ export class SunoCaptchaSolver {
       logger.warn(`SunoCaptchaSolver: saved failure diagnostics to ${files.prefix}.*`);
       return files;
     } catch (diagnosticError) {
-      logger.warn(
-        `SunoCaptchaSolver: failed to save diagnostics: ${this.formatError(diagnosticError)}`
-      );
+      logger.warn(`SunoCaptchaSolver: failed to save diagnostics: ${this.formatError(diagnosticError)}`);
       return undefined;
     }
   }

@@ -67,11 +67,29 @@ export class YesCaptchaClient {
     logger.info(
       `YesCaptchaClient: creating HCaptchaClassification task with ${queries.length} queries, question: ${question}`
     );
-    const created = await this.createTask({
+    return this.solveHcaptchaClassification({
       type: 'HCaptchaClassification',
       queries,
       question
     });
+  }
+
+  public async solveHcaptchaByScreenshot(
+    imageBase64: string,
+    question: string
+  ): Promise<YesCaptchaAction[]> {
+    logger.info(
+      `YesCaptchaClient: creating HCaptchaClassification screenshot task, question: ${question}`
+    );
+    return this.solveHcaptchaClassification({
+      type: 'HCaptchaClassification',
+      queries: `data:image/png;base64,${imageBase64}`,
+      question
+    });
+  }
+
+  private async solveHcaptchaClassification(task: Record<string, unknown>): Promise<YesCaptchaAction[]> {
+    const created = await this.createTask(task);
     const result = created.status === 'ready' ? created : await this.waitForResult(created.taskId);
     logger.info(`YesCaptchaClient: HCaptchaClassification solution ${JSON.stringify(result.solution)}`);
     const actions = this.extractActions(result.solution);
