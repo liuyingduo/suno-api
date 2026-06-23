@@ -1,5 +1,7 @@
 import { BrowserContext, Page, Response } from 'playwright';
 import { decode as msgpackDecode, ExtensionCodec } from '@msgpack/msgpack';
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 
 interface HcaptchaEntity {
   entity_uri?: string;
@@ -30,6 +32,7 @@ interface HcaptchaProtocolLogger {
 }
 
 const hcaptchaCodec = new ExtensionCodec();
+const PROTOCOL_DIAGNOSTIC_DIR = path.join(process.cwd(), 'logs', 'captcha-protocol');
 hcaptchaCodec.register({
   type: 18,
   encode: (input: unknown) => input instanceof Uint8Array ? input : null,
@@ -46,7 +49,11 @@ export class HcaptchaDragDropProtocolStore {
       if (!isInspectableResponse(response)) {
         return;
       }
-      this.capture(response).catch(() => undefined);
+      this.capture(response).catch((error) => {
+        this.logger?.warn(
+          `SunoCaptchaSolver: failed to inspect hCaptcha protocol response ${response.status()} ${response.url()} ${formatError(error)}`
+        );
+      });
     });
   }
 
@@ -94,7 +101,36 @@ async function decodeGetcaptchaResponse(response: Response): Promise<unknown> {
   if (text.startsWith('{') || text.startsWith('[')) {
     return JSON.parse(text);
   }
-  return msgpackDecode(body, { extensionCodec: hcaptchaCodec });
+  try {
+    return msgpackDecode(body, { extensionCodec: hcaptchaCodec });
+  } catch (error) {
+    const diagnosticPath = await saveProtocolBody(response, body);
+    throw new Error(
+      `decode failed ${JSON.stringify({
+        contentType: response.headers()['content-type'],
+        bodyLength: body.length,
+        firstByte: body[0],
+        diagnosticPath,
+        error: formatError(error)
+      })}`
+    );
+  }
+}
+
+async function saveProtocolBody(response: Response, body: Buffer): Promise<string> {
+  await mkdir(PROTOCOL_DIAGNOSTIC_DIR, { recursive: true });
+  const name = new Date().toISOString().replace(/[:.]/g, '-');
+  const filePath = path.join(PROTOCOL_DIAGNOSTIC_DIR, `hcaptcha-${name}.bin`);
+  const metadataPath = path.join(PROTOCOL_DIAGNOSTIC_DIR, `hcaptcha-${name}.json`);
+  await Promise.all([
+    writeFile(filePath, body),
+    writeFile(metadataPath, JSON.stringify({
+      url: response.url(),
+      status: response.status(),
+      headers: response.headers()
+    }, null, 2), 'utf8')
+  ]);
+  return filePath;
 }
 
 function toDragDropChallenge(data: unknown): HcaptchaDragDropChallenge | undefined {
@@ -229,4 +265,11 @@ function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+function formatError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
 }
