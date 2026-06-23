@@ -66,6 +66,7 @@ export interface SunoGenerateOptions {
   task?: string;
   generation_type?: string;
   gpt_description_prompt?: string;
+  user_uploaded_images_b64?: string[] | string | null;
   override_fields?: string[];
   cover_clip_id?: string | null;
   cover_start_s?: number | null;
@@ -74,6 +75,11 @@ export interface SunoGenerateOptions {
   artist_clip_id?: string | null;
   artist_start_s?: number | null;
   artist_end_s?: number | null;
+  continue_clip_id?: string | null;
+  continued_aligned_prompt?: string | null;
+  continue_at?: number | null;
+  transaction_uuid?: string;
+  token_provider?: number | null;
   metadata?: SunoGenerateMetadata;
 }
 
@@ -130,6 +136,7 @@ const OPTIONAL_GENERATE_KEYS: Array<keyof SunoGenerateOptions> = [
   'task',
   'generation_type',
   'gpt_description_prompt',
+  'user_uploaded_images_b64',
   'override_fields',
   'cover_clip_id',
   'cover_start_s',
@@ -137,7 +144,12 @@ const OPTIONAL_GENERATE_KEYS: Array<keyof SunoGenerateOptions> = [
   'persona_id',
   'artist_clip_id',
   'artist_start_s',
-  'artist_end_s'
+  'artist_end_s',
+  'continue_clip_id',
+  'continued_aligned_prompt',
+  'continue_at',
+  'transaction_uuid',
+  'token_provider'
 ];
 
 function mergeDefinedMetadata(
@@ -765,9 +777,7 @@ class SunoApi {
     options?: SunoGenerateOptions
   ): Promise<AudioInfo[]> {
     await this.keepAlive();
-    const browserToken = JSON.stringify({
-      token: JSON.stringify({ timestamp: Date.now() })
-    });
+    const browserToken = this.createBrowserToken();
     const captchaToken = await this.getCaptchaToken(browserToken);
     const payload: any = {
       make_instrumental: make_instrumental,
@@ -779,7 +789,7 @@ class SunoApi {
       continued_aligned_prompt: null,
       task: task,
       token: captchaToken,
-      token_provider: 1,
+      token_provider: null,
       transaction_uuid: randomUUID(),
       user_uploaded_images_b64: null,
       cover_clip_id: null,

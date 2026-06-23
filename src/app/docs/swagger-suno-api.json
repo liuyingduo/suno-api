@@ -40,6 +40,11 @@
                     "description": "Model name ,default is chirp-auk-turbo",
                     "example": "chirp-auk-turbo"
                   },
+                  "mv": {
+                    "type": "string",
+                    "description": "Suno model name alias used by the web payload.",
+                    "example": "chirp-fenix"
+                  },
                   "wait_audio": {
                     "type": "boolean",
                     "description": "Whether to wait for music generation, default is false, directly return audio task information; set to true, will wait for up to 100s until the audio is generated.",
@@ -78,10 +83,35 @@
                     "description": "Simple mode style description prompt.",
                     "example": "happy"
                   },
+                  "user_uploaded_images_b64": {
+                    "nullable": true,
+                    "description": "Base64 image payloads passed through to Suno.",
+                    "oneOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
                   "cover_clip_id": {
                     "type": "string",
                     "description": "Existing clip ID for cover/remix.",
                     "example": "6bcf232e-3917-4cd6-bdc1-bbff62bca970"
+                  },
+                  "cover_start_s": {
+                    "type": "number",
+                    "nullable": true,
+                    "description": "Cover source start time in seconds."
+                  },
+                  "cover_end_s": {
+                    "type": "number",
+                    "nullable": true,
+                    "description": "Cover source end time in seconds."
                   },
                   "override_fields": {
                     "type": "array",
@@ -92,6 +122,50 @@
                     "example": [
                       "prompt"
                     ]
+                  },
+                  "persona_id": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Persona ID passed through to Suno."
+                  },
+                  "artist_clip_id": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Artist clip ID passed through to Suno."
+                  },
+                  "artist_start_s": {
+                    "type": "number",
+                    "nullable": true,
+                    "description": "Artist source start time in seconds."
+                  },
+                  "artist_end_s": {
+                    "type": "number",
+                    "nullable": true,
+                    "description": "Artist source end time in seconds."
+                  },
+                  "continue_clip_id": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Continue clip ID passed through to Suno."
+                  },
+                  "continued_aligned_prompt": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Aligned prompt for continuation."
+                  },
+                  "continue_at": {
+                    "type": "number",
+                    "nullable": true,
+                    "description": "Continuation start time in seconds."
+                  },
+                  "transaction_uuid": {
+                    "type": "string",
+                    "description": "Optional transaction UUID. A UUID is generated when omitted."
+                  },
+                  "token_provider": {
+                    "type": "number",
+                    "nullable": true,
+                    "description": "Captcha token provider value passed through to Suno."
                   },
                   "tempo": {
                     "type": "number",
@@ -1535,6 +1609,11 @@
             "type": "boolean",
             "description": "Whether to enable mumble mode.",
             "example": false
+          },
+          "is_remix": {
+            "type": "boolean",
+            "description": "Whether the request is a remix or cover flow.",
+            "example": true
           },
           "create_mode": {
             "type": "string",

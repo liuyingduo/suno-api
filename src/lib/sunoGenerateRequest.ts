@@ -26,6 +26,7 @@ const GENERATE_OPTION_KEYS: GenerateOptionKey[] = [
   'task',
   'generation_type',
   'gpt_description_prompt',
+  'user_uploaded_images_b64',
   'override_fields',
   'cover_clip_id',
   'cover_start_s',
@@ -33,7 +34,12 @@ const GENERATE_OPTION_KEYS: GenerateOptionKey[] = [
   'persona_id',
   'artist_clip_id',
   'artist_start_s',
-  'artist_end_s'
+  'artist_end_s',
+  'continue_clip_id',
+  'continued_aligned_prompt',
+  'continue_at',
+  'transaction_uuid',
+  'token_provider'
 ];
 
 function copyDefinedMetadata(
@@ -138,6 +144,7 @@ function normalizeGenerateOptions(
     options.generation_type = options.generation_type ?? 'SIMPLE_REMIX';
     options.override_fields = options.override_fields ?? ['prompt'];
     metadata.is_remix = metadata.is_remix ?? true;
+    metadata.create_mode = metadata.create_mode ?? 'simple';
   }
   if (Object.keys(metadata).length > 0) {
     options.metadata = metadata;
@@ -160,7 +167,7 @@ export function getSunoGenerateModeRequest(
     tags: body.tags === undefined ? undefined : String(body.tags),
     title: body.title === undefined ? undefined : String(body.title),
     make_instrumental: isSound ? true : Boolean(body.make_instrumental),
-    model: String(body.model ?? (isSound || isCover ? DEFAULT_SOUND_MODEL : DEFAULT_MODEL)),
+    model: String(body.mv ?? body.model ?? (isSound || isCover ? DEFAULT_SOUND_MODEL : DEFAULT_MODEL)),
     wait_audio: Boolean(body.wait_audio),
     negative_tags: body.negative_tags === undefined ? undefined : String(body.negative_tags),
     options,
