@@ -62,7 +62,10 @@ export class HcaptchaDragDropProtocolStore {
   }
 
   private async capture(response: Response): Promise<void> {
-    const data = await decodeGetcaptchaResponse(response);
+    const body = await response.body();
+    const bodyPath = await saveProtocolBody(response, body);
+    const data = await decodeProtocolResponse(response, body);
+    await saveProtocolJson(response, data, bodyPath);
     this.logSummary(response, data);
     const challenge = toDragDropChallenge(data);
     if (challenge) {
@@ -95,8 +98,7 @@ export async function renderDragDropChallengeImage(
   }
 }
 
-async function decodeGetcaptchaResponse(response: Response): Promise<unknown> {
-  const body = await response.body();
+async function decodeProtocolResponse(response: Response, body: Buffer): Promise<unknown> {
   const text = body.toString('utf8');
   if (text.startsWith('{') || text.startsWith('[')) {
     return JSON.parse(text);
@@ -104,13 +106,11 @@ async function decodeGetcaptchaResponse(response: Response): Promise<unknown> {
   try {
     return msgpackDecode(body, { extensionCodec: hcaptchaCodec });
   } catch (error) {
-    const diagnosticPath = await saveProtocolBody(response, body);
     throw new Error(
       `decode failed ${JSON.stringify({
         contentType: response.headers()['content-type'],
         bodyLength: body.length,
         firstByte: body[0],
-        diagnosticPath,
         error: formatError(error)
       })}`
     );
@@ -119,7 +119,7 @@ async function decodeGetcaptchaResponse(response: Response): Promise<unknown> {
 
 async function saveProtocolBody(response: Response, body: Buffer): Promise<string> {
   await mkdir(PROTOCOL_DIAGNOSTIC_DIR, { recursive: true });
-  const name = new Date().toISOString().replace(/[:.]/g, '-');
+  const name = createProtocolDiagnosticName(response);
   const filePath = path.join(PROTOCOL_DIAGNOSTIC_DIR, `hcaptcha-${name}.bin`);
   const metadataPath = path.join(PROTOCOL_DIAGNOSTIC_DIR, `hcaptcha-${name}.json`);
   await Promise.all([
@@ -127,10 +127,37 @@ async function saveProtocolBody(response: Response, body: Buffer): Promise<strin
     writeFile(metadataPath, JSON.stringify({
       url: response.url(),
       status: response.status(),
-      headers: response.headers()
+      endpoint: getProtocolEndpoint(response.url()),
+      request: {
+        method: response.request().method(),
+        resourceType: response.request().resourceType(),
+        headers: response.request().headers(),
+        postData: response.request().postData()
+      },
+      responseHeaders: response.headers(),
+      body: {
+        path: filePath,
+        length: body.length,
+        firstByte: body[0]
+      }
     }, null, 2), 'utf8')
   ]);
   return filePath;
+}
+
+async function saveProtocolJson(response: Response, data: unknown, bodyPath: string): Promise<void> {
+  await mkdir(PROTOCOL_DIAGNOSTIC_DIR, { recursive: true });
+  const filePath = path.join(
+    PROTOCOL_DIAGNOSTIC_DIR,
+    `hcaptcha-${createProtocolDiagnosticName(response)}.decoded.json`
+  );
+  await writeFile(filePath, JSON.stringify({
+    url: response.url(),
+    endpoint: getProtocolEndpoint(response.url()),
+    bodyPath,
+    summary: summarizeProtocolData(data),
+    data
+  }, null, 2), 'utf8');
 }
 
 function toDragDropChallenge(data: unknown): HcaptchaDragDropChallenge | undefined {
@@ -154,7 +181,12 @@ function isGetcaptchaResponse(value: unknown): value is HcaptchaGetcaptchaRespon
 
 function isInspectableResponse(response: Response): boolean {
   const url = response.url();
-  return url.includes('/getcaptcha/') || url.includes('/checkcaptcha/') || url.includes('/siteverify');
+  return (
+    url.includes('/checksiteconfig') ||
+    url.includes('/getcaptcha/') ||
+    url.includes('/checkcaptcha/') ||
+    url.includes('/siteverify')
+  );
 }
 
 function summarizeProtocolData(data: unknown): Record<string, unknown> {
@@ -169,6 +201,18 @@ function summarizeProtocolData(data: unknown): Record<string, unknown> {
     taskCount: data.tasklist?.length ?? 0,
     tasks: data.tasklist?.map(summarizeTask)
   };
+}
+
+function getProtocolEndpoint(url: string): string {
+  if (url.includes('/checksiteconfig')) return 'checksiteconfig';
+  if (url.includes('/getcaptcha/')) return 'getcaptcha';
+  if (url.includes('/checkcaptcha/')) return 'checkcaptcha';
+  if (url.includes('/siteverify')) return 'siteverify';
+  return 'unknown';
+}
+
+function createProtocolDiagnosticName(response: Response): string {
+  return `${new Date().toISOString().replace(/[:.]/g, '-')}-${getProtocolEndpoint(response.url())}`;
 }
 
 function summarizeTask(task: HcaptchaTask): Record<string, unknown> {
