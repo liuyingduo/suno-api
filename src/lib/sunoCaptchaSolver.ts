@@ -1,6 +1,6 @@
 import pino from 'pino';
 import { Browser, BrowserContext, chromium, Locator, Page, Request } from 'playwright';
-// import path from 'node:path';
+import path from 'node:path';
 import { YesCaptchaAction, YesCaptchaClient } from '@/lib/yesCaptchaClient';
 import { sleep } from '@/lib/utils';
 import { FeishuNotifier } from '@/lib/feishuNotifier';
@@ -17,7 +17,8 @@ const logger = pino();
 const SUNO_CREATE_URL = 'https://suno.com/create';
 const GENERATE_URL_PART = '/api/generate/v2-web/';
 const CAPTCHA_TIMEOUT_MS = 180_000;
-// const RECORD_VIDEO_DIR = path.join(process.cwd(), 'logs', 'captcha-videos');
+const CAPTCHA_DEBUG_SAVE = process.env.CAPTCHA_DEBUG_SAVE === 'true';
+const RECORD_VIDEO_DIR = path.join(process.cwd(), 'logs', 'captcha-videos');
 const HCAPTCHA_IMAGE_RE = /^https:\/\/(?:img[a-zA-Z0-9]*\.hcaptcha\.com|hcaptcha-imgs-prod\.suno\.com)\/.*$/;
 const INVALID_COOKIE_RE = /[\x00-\x1f\x7f;,"]/;
 const PROMPT_TEXTAREA_XPATH =
@@ -73,14 +74,13 @@ export class SunoCaptchaSolver {
       failure = error;
       throw error;
     } finally {
-      // const files = !this.tokenCaptured ? await this.handleFailureDiagnostics(page, failure) : undefined;
-      const files = undefined;
+      const files = CAPTCHA_DEBUG_SAVE && !this.tokenCaptured ? await this.handleFailureDiagnostics(page, failure) : undefined;
       abortController.abort();
-      // const videoPath = await this.closeBrowserWithVideoLog(page, browser);
-      await browser.close();
-      // if (!this.tokenCaptured) {
-      //   await this.notifyFailure(files, failure, videoPath);
-      // }
+      const videoPath = CAPTCHA_DEBUG_SAVE ? await this.closeBrowserWithVideoLog(page, browser) : undefined;
+      if (!CAPTCHA_DEBUG_SAVE) await browser.close();
+      if (CAPTCHA_DEBUG_SAVE && !this.tokenCaptured) {
+        await this.notifyFailure(files, failure, videoPath);
+      }
       logger.info('SunoCaptchaSolver: browser closed');
     }
   }
@@ -106,10 +106,9 @@ export class SunoCaptchaSolver {
       userAgent: this.options.userAgent,
       locale: process.env.BROWSER_LOCALE,
       viewport: { width: 1280, height: 800 },
-      // recordVideo: {
-      //   dir: RECORD_VIDEO_DIR,
-      //   size: { width: 1280, height: 800 }
-      // },
+      recordVideo: CAPTCHA_DEBUG_SAVE
+        ? { dir: RECORD_VIDEO_DIR, size: { width: 1280, height: 800 } }
+        : undefined,
       storageState: {
         cookies: this.toPlaywrightCookies(),
         origins: []
@@ -278,7 +277,7 @@ export class SunoCaptchaSolver {
       await this.waitForVisibleChallenge(page, challenge, signal);
       const prompt = await this.readChallengePrompt(challenge);
       logger.info(`SunoCaptchaSolver: solving hCaptcha challenge: ${prompt}`);
-      // await this.saveChallengeSnapshot(page, challenge, prompt);
+      if (CAPTCHA_DEBUG_SAVE) await this.saveChallengeSnapshot(page, challenge, prompt);
       const actions = await this.solveVisibleChallenge(challenge, prompt);
       await this.performActions(challenge, actions);
       await this.submitChallenge(frame.locator('.button-submit'));
