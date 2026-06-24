@@ -567,6 +567,14 @@ class SunoApi {
     );
   }
 
+  public async getAlignedLyrics(clipId: string): Promise<object> {
+    return this.requestRawSuno(
+      'get_aligned_lyrics',
+      'GET',
+      `/api/gen/${clipId}/aligned_lyrics/v2/`
+    );
+  }
+
   public async getPromptSuggestions(): Promise<PromptSuggestionsResponse> {
     return this.requestRawSuno(
       'get_prompt_suggestions',
