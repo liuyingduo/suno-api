@@ -274,7 +274,9 @@ export class SunoCaptchaSolver {
     const frame = page.frameLocator('iframe[title*="hCaptcha"]');
     const challenge = frame.locator('.challenge-container');
     while (!signal.aborted) {
-      await this.waitForVisibleChallenge(page, challenge, signal);
+      await this.waitForVisibleChallenge(challenge);
+      if (CAPTCHA_DEBUG_SAVE) await this.saveChallengeSnapshot(page, challenge);
+      await this.waitForHcaptchaImages(page, signal);
       const prompt = await this.readChallengePrompt(challenge);
       logger.info(`SunoCaptchaSolver: solving hCaptcha challenge: ${prompt}`);
       if (CAPTCHA_DEBUG_SAVE) await this.saveChallengeSnapshot(page, challenge, prompt);
@@ -289,7 +291,7 @@ export class SunoCaptchaSolver {
     return prompt.trim();
   }
 
-  private async saveChallengeSnapshot(page: Page, challenge: Locator, prompt: string): Promise<void> {
+  private async saveChallengeSnapshot(page: Page, challenge: Locator, prompt?: string): Promise<void> {
     try {
       await saveCaptchaChallengeSnapshot({ page, challenge, prompt, logger });
     } catch (error) {
@@ -297,13 +299,8 @@ export class SunoCaptchaSolver {
     }
   }
 
-  private async waitForVisibleChallenge(
-    page: Page,
-    challenge: Locator,
-    signal: AbortSignal
-  ): Promise<void> {
+  private async waitForVisibleChallenge(challenge: Locator): Promise<void> {
     await challenge.waitFor({ state: 'visible', timeout: 60_000 });
-    await this.waitForHcaptchaImages(page, signal);
   }
 
   private async solveVisibleChallenge(

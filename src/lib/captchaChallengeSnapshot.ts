@@ -7,7 +7,7 @@ const SNAPSHOT_DIR = path.join(process.cwd(), 'logs', 'captcha-challenges');
 interface CaptchaChallengeSnapshotInput {
   page: Page;
   challenge: Locator;
-  prompt: string;
+  prompt?: string;
   logger: {
     info(message: string): void;
   };
