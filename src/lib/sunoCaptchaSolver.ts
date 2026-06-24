@@ -18,6 +18,7 @@ const SUNO_CREATE_URL = 'https://suno.com/create';
 const GENERATE_URL_PART = '/api/generate/v2-web/';
 const CAPTCHA_TIMEOUT_MS = 180_000;
 const CAPTCHA_DEBUG_SAVE = process.env.CAPTCHA_DEBUG_SAVE === 'true';
+const CAPTCHA_CHALLENGE_STABLE_WAIT_MS = 10_000;
 const RECORD_VIDEO_DIR = path.join(process.cwd(), 'logs', 'captcha-videos');
 const HCAPTCHA_IMAGE_RE = /^https:\/\/(?:img[a-zA-Z0-9]*\.hcaptcha\.com|hcaptcha-imgs-prod\.suno\.com)\/.*$/;
 const INVALID_COOKIE_RE = /[\x00-\x1f\x7f;,"]/;
@@ -277,6 +278,8 @@ export class SunoCaptchaSolver {
       await this.waitForVisibleChallenge(challenge);
       if (CAPTCHA_DEBUG_SAVE) await this.saveChallengeSnapshot(page, challenge);
       await this.waitForHcaptchaImages(page, signal);
+      logger.info('SunoCaptchaSolver: waiting 10s for hCaptcha challenge to stabilize');
+      await page.waitForTimeout(CAPTCHA_CHALLENGE_STABLE_WAIT_MS);
       const prompt = await this.readChallengePrompt(challenge);
       logger.info(`SunoCaptchaSolver: solving hCaptcha challenge: ${prompt}`);
       if (CAPTCHA_DEBUG_SAVE) await this.saveChallengeSnapshot(page, challenge, prompt);
