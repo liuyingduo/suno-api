@@ -39,7 +39,11 @@ const GENERATE_OPTION_KEYS: GenerateOptionKey[] = [
   'continued_aligned_prompt',
   'continue_at',
   'transaction_uuid',
-  'token_provider'
+  'token_provider',
+  'mashup_clip_ids',
+  'chop_sample_clip_id',
+  'chop_sample_start_s',
+  'chop_sample_end_s'
 ];
 
 function copyDefinedMetadata(
@@ -147,6 +151,21 @@ function normalizeGenerateOptions(
     metadata.is_remix = metadata.is_remix ?? true;
     metadata.create_mode = metadata.create_mode ?? 'simple';
   }
+  if (body.task === 'mashup_condition' || hasMashupClipIds(body)) {
+    options.task = 'mashup_condition';
+    options.generation_type = options.generation_type ?? 'TEXT';
+    options.override_fields = options.override_fields ?? [];
+    metadata.create_mode = metadata.create_mode ?? 'custom';
+  }
+  if (body.task === 'chop_sample_condition' || isNonEmptyString(body.chop_sample_clip_id)) {
+    options.task = 'chop_sample_condition';
+    options.generation_type = options.generation_type ?? 'TEXT';
+    options.override_fields = options.override_fields ?? [];
+    metadata.create_mode = metadata.create_mode ?? 'custom';
+    delete metadata.is_remix;
+    delete metadata.lyrics_model;
+    delete metadata.vocal_gender;
+  }
   if (Object.keys(metadata).length > 0) {
     options.metadata = metadata;
   }
@@ -161,14 +180,17 @@ export function getSunoGenerateModeRequest(
   const task = options.task ?? body.task;
   const isSound = task === 'sound';
   const isCover = task === 'cover' || isNonEmptyString(body.cover_clip_id);
-  const isCustom = isSound || isCover || body.tags !== undefined || body.title !== undefined;
+  const isMashup = task === 'mashup_condition' || hasMashupClipIds(body);
+  const isSample = task === 'chop_sample_condition' || isNonEmptyString(body.chop_sample_clip_id);
+  const isCustom =
+    isSound || isCover || isMashup || isSample || body.tags !== undefined || body.title !== undefined;
 
   return {
     prompt: String(body.prompt ?? ''),
     tags: body.tags === undefined ? undefined : String(body.tags),
     title: body.title === undefined ? undefined : String(body.title),
     make_instrumental: isSound ? true : Boolean(body.make_instrumental),
-    model: String(body.mv ?? body.model ?? (isSound || isCover ? DEFAULT_SOUND_MODEL : DEFAULT_MODEL)),
+    model: String(body.mv ?? body.model ?? (isSound || isCover || isSample ? DEFAULT_SOUND_MODEL : DEFAULT_MODEL)),
     wait_audio: Boolean(body.wait_audio),
     negative_tags: body.negative_tags === undefined ? undefined : String(body.negative_tags),
     options,
@@ -178,4 +200,8 @@ export function getSunoGenerateModeRequest(
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;
+}
+
+function hasMashupClipIds(body: Record<string, unknown>): boolean {
+  return Array.isArray(body.mashup_clip_ids) && body.mashup_clip_ids.length > 0;
 }

@@ -80,6 +80,10 @@ export interface SunoGenerateOptions {
   continue_at?: number | null;
   transaction_uuid?: string;
   token_provider?: number | null;
+  mashup_clip_ids?: string[] | null;
+  chop_sample_clip_id?: string | null;
+  chop_sample_start_s?: number | null;
+  chop_sample_end_s?: number | null;
   metadata?: SunoGenerateMetadata;
 }
 
@@ -149,7 +153,11 @@ const OPTIONAL_GENERATE_KEYS: Array<keyof SunoGenerateOptions> = [
   'continued_aligned_prompt',
   'continue_at',
   'transaction_uuid',
-  'token_provider'
+  'token_provider',
+  'mashup_clip_ids',
+  'chop_sample_clip_id',
+  'chop_sample_start_s',
+  'chop_sample_end_s'
 ];
 
 function mergeDefinedMetadata(
@@ -939,6 +947,54 @@ class SunoApi {
       return lyricsResponse.data;
     } catch (e: any) {
       await recordRequest('generate_lyrics', this.accountId, false, Date.now() - startTime, e?.message);
+      throw e;
+    }
+  }
+
+  /**
+   * 将两首歌的歌词混合（Mashup）。
+   * 调用 /api/generate/lyrics-mashup 创建任务，再轮询 /api/generate/lyrics/{mashup_id} 直到完成。
+   * @param lyricsA 第一首歌词
+   * @param lyricsB 第二首歌词
+   * @param source 可选来源标识（透传给上游，默认 null）
+   * @returns 最终的歌词对象（含 text/title/status 等）
+   */
+  public async generateLyricsMashup(
+    lyricsA: string,
+    lyricsB: string,
+    source: string | null = null
+  ): Promise<object> {
+    await this.keepAlive(false);
+    const startTime = Date.now();
+    try {
+      // 创建 mashup 歌词任务
+      const createResponse = await this.client.post(
+        `${SunoApi.BASE_URL}/api/generate/lyrics-mashup`,
+        { lyrics_a: lyricsA, lyrics_b: lyricsB, source }
+      );
+      const mashupId = createResponse.data.mashup_id;
+
+      // 轮询直到完成
+      let lyricsResponse = await this.client.get(
+        `${SunoApi.BASE_URL}/api/generate/lyrics/${mashupId}`
+      );
+      while (lyricsResponse?.data?.status !== 'complete') {
+        await sleep(2);
+        lyricsResponse = await this.client.get(
+          `${SunoApi.BASE_URL}/api/generate/lyrics/${mashupId}`
+        );
+      }
+
+      await recordRequest('generate_lyrics_mashup', this.accountId, true, Date.now() - startTime);
+      return lyricsResponse.data;
+    } catch (e: any) {
+      await recordRequest(
+        'generate_lyrics_mashup',
+        this.accountId,
+        false,
+        Date.now() - startTime,
+        e?.message
+      );
       throw e;
     }
   }
