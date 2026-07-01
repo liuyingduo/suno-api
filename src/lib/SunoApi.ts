@@ -598,10 +598,9 @@ class SunoApi {
   }
 
   /**
-   * Crop（裁剪）：保留或移除指定区间，返回裁剪后的新 clip。
-   * 三步：POST /api/edit/crop/{clipId}/ → 拿 action_clip_id；
-   *       轮询 GET /api/edit/action/{action_clip_id}/ 直到 status=complete；
-   *       GET /api/clip/{action_clip_id} 取最终结果。
+   * Crop（裁剪）：保留或移除指定区间。
+   * POST /api/edit/crop/{clipId}/ → 拿 action_clip_id 后立即返回 { action_clip_id }；
+   * 生成进度由调用方主动轮询 GET /api/edit/action/{action_clip_id}/。
    */
   public async crop(
     clipId: string,
@@ -631,36 +630,14 @@ class SunoApi {
     if (!actionClipId) {
       throw new Error('Crop failed: missing action_clip_id');
     }
-    return this.pollActionAndFetchClip(actionClipId);
+    // 转发即返回，不在后端阻塞轮询；由调用方（前端）主动轮询 /api/edit/action/{id} 拿结果。
+    return { action_clip_id: actionClipId };
   }
 
   /**
-   * 轮询 /api/edit/action/{id}/ 直到 status=complete，再 GET /api/clip/{id} 取最终结果。
-   * 供 crop / fade 等编辑动作共用。
-   */
-  private async pollActionAndFetchClip(actionClipId: string): Promise<object> {
-    const maxAttempts = 60;
-    for (let i = 0; i < maxAttempts; i++) {
-      const actionResp = (await this.requestRawSuno(
-        'edit_action',
-        'GET',
-        `/api/edit/action/${actionClipId}/`
-      )) as { status?: string };
-      const status = actionResp?.status;
-      if (status === 'complete') {
-        break;
-      }
-      if (status && !['processing', 'queued', 'pending', 'running'].includes(status)) {
-        throw new Error(`Edit action failed with status: ${status}`);
-      }
-      await sleep(1, 2);
-    }
-    return this.getClip(actionClipId);
-  }
-
-  /**
-   * Fade（淡入/淡出）：POST /api/edit/fade/{clipId}/ → 轮询 action → 取 clip。
+   * Fade（淡入/淡出）：POST /api/edit/fade/{clipId}/ → 拿 action_clip_id 后立即返回。
    * 传 fade_in_time（淡入结束秒）或 fade_out_time（淡出开始秒）。
+   * 生成进度由调用方主动轮询 GET /api/edit/action/{action_clip_id}/。
    */
   public async fade(
     clipId: string,
@@ -680,7 +657,20 @@ class SunoApi {
     if (!actionClipId) {
       throw new Error('Fade failed: missing action_clip_id');
     }
-    return this.pollActionAndFetchClip(actionClipId);
+    // 转发即返回，不在后端阻塞轮询。
+    return { action_clip_id: actionClipId };
+  }
+
+  /**
+   * 查询 edit action（fade/crop 等）的生成状态。供前端主动轮询。
+   * GET /api/edit/action/{actionClipId}/ → 返回上游状态对象（含 status，完成时含 clip 信息）。
+   */
+  public async getEditAction(actionClipId: string): Promise<object> {
+    return this.requestRawSuno(
+      'edit_action',
+      'GET',
+      `/api/edit/action/${actionClipId}/`
+    );
   }
 
   /**
