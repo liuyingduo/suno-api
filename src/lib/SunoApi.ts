@@ -60,6 +60,8 @@ export interface SunoGenerateMetadata {
   sound_configs?: SunoSoundConfigs;
   vocal_gender?: string;
   lyrics_model?: string;
+  infill_lyrics?: string;
+  lyrics_updated?: boolean;
 }
 
 export interface SunoGenerateOptions {
@@ -84,6 +86,12 @@ export interface SunoGenerateOptions {
   chop_sample_clip_id?: string | null;
   chop_sample_start_s?: number | null;
   chop_sample_end_s?: number | null;
+  overpainting_clip_id?: string | null;
+  infill_context_start_s?: number | null;
+  infill_context_end_s?: number | null;
+  infill_start_s?: number | null;
+  infill_end_s?: number | null;
+  infill_dur_s?: number | null;
   metadata?: SunoGenerateMetadata;
 }
 
@@ -157,7 +165,13 @@ const OPTIONAL_GENERATE_KEYS: Array<keyof SunoGenerateOptions> = [
   'mashup_clip_ids',
   'chop_sample_clip_id',
   'chop_sample_start_s',
-  'chop_sample_end_s'
+  'chop_sample_end_s',
+  'overpainting_clip_id',
+  'infill_context_start_s',
+  'infill_context_end_s',
+  'infill_start_s',
+  'infill_end_s',
+  'infill_dur_s'
 ];
 
 function mergeDefinedMetadata(
@@ -581,6 +595,132 @@ class SunoApi {
       'GET',
       `/api/gen/${clipId}/aligned_lyrics/v2/`
     );
+  }
+
+  /**
+   * Crop（裁剪）：保留或移除指定区间，返回裁剪后的新 clip。
+   * 三步：POST /api/edit/crop/{clipId}/ → 拿 action_clip_id；
+   *       轮询 POST /api/edit/action/{action_clip_id}/ 直到 status=complete；
+   *       GET /api/clip/{action_clip_id} 取最终结果。
+   */
+  public async crop(
+    clipId: string,
+    body: {
+      crop_start_s: number;
+      crop_end_s: number;
+      is_crop_remove?: boolean;
+      title?: string;
+      ui_surface?: string;
+    }
+  ): Promise<object> {
+    const cropResp = (await this.requestRawSuno(
+      'edit_crop',
+      'POST',
+      `/api/edit/crop/${clipId}/`,
+      {
+        crop_start_s: body.crop_start_s,
+        crop_end_s: body.crop_end_s,
+        is_crop_remove: body.is_crop_remove ?? false,
+        // 仅 Remove Section 会带 title（"... (Remove Section)"），Crop 不带
+        ...(body.title ? { title: body.title } : {}),
+        ui_surface: body.ui_surface ?? 'song_actions'
+      }
+    )) as { action_clip_id?: string };
+
+    const actionClipId = cropResp?.action_clip_id;
+    if (!actionClipId) {
+      throw new Error('Crop failed: missing action_clip_id');
+    }
+    return this.pollActionAndFetchClip(actionClipId);
+  }
+
+  /**
+   * 轮询 /api/edit/action/{id}/ 直到 status=complete，再 GET /api/clip/{id} 取最终结果。
+   * 供 crop / fade 等编辑动作共用。
+   */
+  private async pollActionAndFetchClip(actionClipId: string): Promise<object> {
+    const maxAttempts = 60;
+    for (let i = 0; i < maxAttempts; i++) {
+      const actionResp = (await this.requestRawSuno(
+        'edit_action',
+        'POST',
+        `/api/edit/action/${actionClipId}/`
+      )) as { status?: string };
+      const status = actionResp?.status;
+      if (status === 'complete') {
+        break;
+      }
+      if (status && !['processing', 'queued', 'pending', 'running'].includes(status)) {
+        throw new Error(`Edit action failed with status: ${status}`);
+      }
+      await sleep(1, 2);
+    }
+    return this.getClip(actionClipId);
+  }
+
+  /**
+   * Fade（淡入/淡出）：POST /api/edit/fade/{clipId}/ → 轮询 action → 取 clip。
+   * 传 fade_in_time（淡入结束秒）或 fade_out_time（淡出开始秒）。
+   */
+  public async fade(
+    clipId: string,
+    body: { fade_in_time?: number; fade_out_time?: number; title?: string }
+  ): Promise<object> {
+    const data: Record<string, unknown> = {};
+    if (body.fade_in_time != null) data.fade_in_time = body.fade_in_time;
+    if (body.fade_out_time != null) data.fade_out_time = body.fade_out_time;
+    if (body.title) data.title = body.title;
+    const resp = (await this.requestRawSuno(
+      'edit_fade',
+      'POST',
+      `/api/edit/fade/${clipId}/`,
+      data
+    )) as { action_clip_id?: string };
+    const actionClipId = resp?.action_clip_id;
+    if (!actionClipId) {
+      throw new Error('Fade failed: missing action_clip_id');
+    }
+    return this.pollActionAndFetchClip(actionClipId);
+  }
+
+  /**
+   * Reverse（反转整首）：调用 reverse-clip 接口，直接返回新 clip（status=processing，无需轮询）。
+   */
+  public async reverse(clipId: string, title?: string): Promise<object> {
+    return this.requestRawSuno('reverse_clip', 'POST', '/api/clips/reverse-clip/', {
+      clip_id: clipId,
+      ...(title ? { title } : {})
+    });
+  }
+
+  /**
+   * Remaster（重制/upsample）：用指定模型重新渲染，返回一批（通常 2 首）新 clip，
+   * status=submitted/running，无需轮询（前端刷新作品库即可）。
+   */
+  public async remaster(
+    clipId: string,
+    body: { model_name: string; variation_category?: string }
+  ): Promise<object> {
+    return this.requestRawSuno('remaster_upsample', 'POST', '/api/generate/upsample', {
+      clip_id: clipId,
+      model_name: body.model_name,
+      variation_category: body.variation_category ?? 'normal'
+    });
+  }
+
+  /**
+   * Adjust Speed（变速）：直接返回新 clip（status=processing，无需轮询）。
+   */
+  public async adjustSpeed(
+    clipId: string,
+    body: { speed_multiplier: number; keep_pitch?: boolean; title?: string }
+  ): Promise<object> {
+    return this.requestRawSuno('adjust_speed', 'POST', '/api/clips/adjust-speed/', {
+      clip_id: clipId,
+      speed_multiplier: body.speed_multiplier,
+      keep_pitch: body.keep_pitch ?? false,
+      ...(body.title ? { title: body.title } : {})
+    });
   }
 
   public async getPromptSuggestions(): Promise<PromptSuggestionsResponse> {

@@ -19,7 +19,9 @@ const METADATA_KEYS: MetadataKey[] = [
   'control_sliders',
   'sound_configs',
   'vocal_gender',
-  'lyrics_model'
+  'lyrics_model',
+  'infill_lyrics',
+  'lyrics_updated'
 ];
 
 const GENERATE_OPTION_KEYS: GenerateOptionKey[] = [
@@ -43,7 +45,13 @@ const GENERATE_OPTION_KEYS: GenerateOptionKey[] = [
   'mashup_clip_ids',
   'chop_sample_clip_id',
   'chop_sample_start_s',
-  'chop_sample_end_s'
+  'chop_sample_end_s',
+  'overpainting_clip_id',
+  'infill_context_start_s',
+  'infill_context_end_s',
+  'infill_start_s',
+  'infill_end_s',
+  'infill_dur_s'
 ];
 
 function copyDefinedMetadata(
