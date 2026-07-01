@@ -600,7 +600,7 @@ class SunoApi {
   /**
    * Crop（裁剪）：保留或移除指定区间，返回裁剪后的新 clip。
    * 三步：POST /api/edit/crop/{clipId}/ → 拿 action_clip_id；
-   *       轮询 POST /api/edit/action/{action_clip_id}/ 直到 status=complete；
+   *       轮询 GET /api/edit/action/{action_clip_id}/ 直到 status=complete；
    *       GET /api/clip/{action_clip_id} 取最终结果。
    */
   public async crop(
@@ -643,7 +643,7 @@ class SunoApi {
     for (let i = 0; i < maxAttempts; i++) {
       const actionResp = (await this.requestRawSuno(
         'edit_action',
-        'POST',
+        'GET',
         `/api/edit/action/${actionClipId}/`
       )) as { status?: string };
       const status = actionResp?.status;
