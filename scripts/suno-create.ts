@@ -13,11 +13,12 @@ import { chromium, type Browser, type BrowserContext, type Page, type Response }
 import * as cookie from 'cookie';
 import { getDb } from '../src/lib/db';
 import { finishSunoCreateRun, startSunoCreateRun } from '../src/lib/sunoCreateRunStore';
+import {
+  CREATE_SONG_BUTTON_SELECTOR,
+  PROMPT_TEXTAREA_SELECTOR,
+} from '../src/lib/sunoCreateSelectors';
 
 const DEFAULT_PROMPT = 'A chill lo-fi hip hop beat with soft piano and rain sounds';
-const TEXTAREA_XPATH =
-  '//*[@id="main-container"]/div/div/div/div/div/div[3]/div/div[2]/div[3]/div/div[2]/div/div[2]/div/div[1]/div[1]/div[1]/textarea';
-const CREATE_BTN_XPATH = '//button[@aria-label="Create song"]';
 const TIMEOUT = 60_000;
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
@@ -228,7 +229,7 @@ async function runAccount(
     const generatePromise = waitForGenerateResponse(page);
 
     console.log(`[${account.email}] Clicking "Create song"...`);
-    await page.locator(`xpath=${CREATE_BTN_XPATH}`).click();
+    await page.locator(CREATE_SONG_BUTTON_SELECTOR).click();
 
     const genResp = await generatePromise;
     await logGenerateResponse(account, genResp);
@@ -276,7 +277,7 @@ async function fillPrompt(
   prompt: string,
   account: AccountRow,
 ) {
-  const textarea = page.locator(`xpath=${TEXTAREA_XPATH}`);
+  const textarea = page.locator(PROMPT_TEXTAREA_SELECTOR);
   await textarea.waitFor({ state: 'visible', timeout: TIMEOUT });
 
   await Promise.race([
@@ -291,19 +292,14 @@ async function fillPrompt(
   await page.waitForTimeout(500);
   await textarea.type(prompt, { delay: 40 });
 
-  const createBtn = page.locator(`xpath=${CREATE_BTN_XPATH}`);
+  const createBtn = page.locator(CREATE_SONG_BUTTON_SELECTOR);
   await createBtn.waitFor({ state: 'visible', timeout: TIMEOUT });
   await page.waitForFunction(
-    () => {
-      const btn = document.evaluate(
-        '//button[@aria-label="Create song"]',
-        document,
-        null,
-        XPathResult.FIRST_ORDERED_NODE_TYPE,
-        null,
-      ).singleNodeValue as HTMLButtonElement | null;
+    (selector) => {
+      const btn = document.querySelector<HTMLButtonElement>(selector);
       return btn && !btn.disabled;
     },
+    CREATE_SONG_BUTTON_SELECTOR,
     { timeout: TIMEOUT },
   );
 }

@@ -12,6 +12,10 @@ import {
 } from '@/lib/sunoCaptchaNetworkLogging';
 import { closeKnownPopups } from '@/lib/sunoPopupHandler';
 import { saveCaptchaChallengeSnapshot } from '@/lib/captchaChallengeSnapshot';
+import {
+  CREATE_SONG_BUTTON_SELECTOR,
+  PROMPT_TEXTAREA_SELECTOR
+} from '@/lib/sunoCreateSelectors';
 
 const logger = pino();
 const SUNO_CREATE_URL = 'https://suno.com/create';
@@ -22,10 +26,6 @@ const CAPTCHA_CHALLENGE_STABLE_WAIT_MS = 10_000;
 const RECORD_VIDEO_DIR = path.join(process.cwd(), 'logs', 'captcha-videos');
 const HCAPTCHA_IMAGE_RE = /^https:\/\/(?:img[a-zA-Z0-9]*\.hcaptcha\.com|hcaptcha-imgs-prod\.suno\.com)\/.*$/;
 const INVALID_COOKIE_RE = /[\x00-\x1f\x7f;,"]/;
-const PROMPT_TEXTAREA_XPATH =
-  '//*[@id="main-container"]/div/div/div/div/div/div[3]/div/div[2]/div[3]/div/div[2]/div/div[2]/div/div[1]/div[1]/div[1]/textarea';
-const CREATE_SONG_BUTTON_XPATH = '//button[@aria-label="Create song"]';
-
 interface SunoCaptchaSolverOptions {
   cookies: Record<string, string | undefined>;
   userAgent: string;
@@ -167,7 +167,7 @@ export class SunoCaptchaSolver {
   private async triggerCaptcha(page: Page): Promise<void> {
     logger.info('SunoCaptchaSolver: triggering captcha from create page');
     await closeKnownPopups(page);
-    const textarea = page.locator(`xpath=${PROMPT_TEXTAREA_XPATH}`);
+    const textarea = page.locator(PROMPT_TEXTAREA_SELECTOR);
     logger.info('SunoCaptchaSolver: waiting for prompt textarea');
     await textarea.waitFor({ state: 'visible', timeout: 60_000 });
 
@@ -184,20 +184,15 @@ export class SunoCaptchaSolver {
     await page.waitForTimeout(500);
     await textarea.type('Lorem ipsum', { delay: 40 });
 
-    const createButton = page.locator(`xpath=${CREATE_SONG_BUTTON_XPATH}`);
+    const createButton = page.locator(CREATE_SONG_BUTTON_SELECTOR);
     logger.info('SunoCaptchaSolver: waiting for Create song button');
     await createButton.waitFor({ state: 'visible', timeout: 60_000 });
     await page.waitForFunction(
-      () => {
-        const button = document.evaluate(
-          '//button[@aria-label="Create song"]',
-          document,
-          null,
-          XPathResult.FIRST_ORDERED_NODE_TYPE,
-          null
-        ).singleNodeValue as HTMLButtonElement | null;
+      (selector) => {
+        const button = document.querySelector<HTMLButtonElement>(selector);
         return Boolean(button && !button.disabled);
       },
+      CREATE_SONG_BUTTON_SELECTOR,
       { timeout: 60_000 }
     );
     logger.info('SunoCaptchaSolver: Create song button enabled; waiting 5s before click');
