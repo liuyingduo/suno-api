@@ -1,4 +1,4 @@
-const CAPTCHA_SNAPSHOT_DELAY_MS = 80_000;
+const CAPTCHA_SNAPSHOT_DELAY_MS = 20_000;
 
 export async function saveCaptchaSnapshotAfterDelay(
   signal: AbortSignal,

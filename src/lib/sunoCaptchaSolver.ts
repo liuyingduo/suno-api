@@ -63,7 +63,7 @@ export class SunoCaptchaSolver {
       await this.triggerCaptcha(page);
       if (CAPTCHA_DEBUG_SAVE) {
         delayedSnapshot = saveCaptchaSnapshotAfterDelay(abortController.signal,
-          () => this.saveDiagnostics(page, undefined, 'captcha-after-80s'));
+          () => this.saveDiagnostics(page, undefined, 'captcha-after-20s'));
       }
       await Promise.race([this.solveChallenges(page, abortController.signal), tokenPromise])
         .catch((error) => {
@@ -434,7 +434,7 @@ export class SunoCaptchaSolver {
       consoleMessages: this.consoleMessages,
       error,
       namePrefix,
-      reason: namePrefix === 'captcha-after-80s' ? 'Captured 80 seconds after clicking Create' : undefined
+      reason: namePrefix === 'captcha-after-20s' ? 'Captured 20 seconds after clicking Create' : undefined
     })
       .then((files) => {
         logger.warn(`SunoCaptchaSolver: saved browser diagnostics to ${files.prefix}.*`);
