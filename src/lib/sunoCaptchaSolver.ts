@@ -13,8 +13,8 @@ import {
 import { closeKnownPopups } from '@/lib/sunoPopupHandler';
 import { saveCaptchaChallengeSnapshot } from '@/lib/captchaChallengeSnapshot';
 import { CREATE_SONG_BUTTON_SELECTOR, PROMPT_TEXTAREA_SELECTOR } from '@/lib/sunoCreateSelectors';
-import { CaptchaResult, extractCaptchaResult } from '@/lib/sunoCaptchaTokenCapture';
-import { watchForVisibleTurnstile } from '@/lib/sunoTurnstileWatcher';
+import { CaptchaResult, extractCaptchaResult, MissingCaptchaTokenError } from '@/lib/sunoCaptchaTokenCapture';
+import { saveCaptchaSnapshotAfterDelay } from '@/lib/sunoCaptchaSnapshotTimer';
 
 const logger = pino();
 const SUNO_CREATE_URL = 'https://suno.com/create';
@@ -48,9 +48,7 @@ export class SunoCaptchaSolver {
     const page = await context.newPage();
     this.attachConsoleLogging(page);
     const abortController = new AbortController();
-    const turnstileWatcher = CAPTCHA_DEBUG_SAVE
-      ? watchForVisibleTurnstile(page, abortController.signal, logger, () => this.saveDiagnostics(page, undefined, 'captcha-turnstile-visible'))
-      : undefined;
+    let delayedSnapshot: Promise<void> | undefined;
     let failure: unknown;
 
     try {
@@ -63,6 +61,10 @@ export class SunoCaptchaSolver {
       });
       await this.waitForSunoReady(page);
       await this.triggerCaptcha(page);
+      if (CAPTCHA_DEBUG_SAVE) {
+        delayedSnapshot = saveCaptchaSnapshotAfterDelay(abortController.signal,
+          () => this.saveDiagnostics(page, undefined, 'captcha-after-60s'));
+      }
       await Promise.race([this.solveChallenges(page, abortController.signal), tokenPromise])
         .catch((error) => {
           logger.warn(`SunoCaptchaSolver: challenge loop ended before token capture: ${error?.message ?? error}`);
@@ -75,7 +77,7 @@ export class SunoCaptchaSolver {
     } finally {
       const files = CAPTCHA_DEBUG_SAVE ? await this.saveDiagnostics(page, failure) : undefined;
       abortController.abort();
-      await turnstileWatcher;
+      await delayedSnapshot;
       const videoPath = CAPTCHA_DEBUG_SAVE ? await this.closeBrowserWithVideoLog(page, browser) : undefined;
       if (!CAPTCHA_DEBUG_SAVE) await browser.close();
       if (CAPTCHA_DEBUG_SAVE && !this.tokenCaptured) {
@@ -241,11 +243,9 @@ export class SunoCaptchaSolver {
           try {
             result = extractCaptchaResult(request);
           } catch (error) {
+            if (!(error instanceof MissingCaptchaTokenError)) throw error;
             logger.warn(`SunoCaptchaSolver: ${this.formatError(error)}`);
-            if (CAPTCHA_DEBUG_SAVE) await this.saveDiagnostics(page, error);
             await route.abort();
-            clearTimeout(timeout);
-            reject(error);
             return;
           }
           if (CAPTCHA_DEBUG_SAVE) await this.saveDiagnostics(page, undefined);
@@ -434,7 +434,7 @@ export class SunoCaptchaSolver {
       consoleMessages: this.consoleMessages,
       error,
       namePrefix,
-      reason: namePrefix === 'captcha-turnstile-visible' ? 'Cloudflare Turnstile iframe became visible' : undefined
+      reason: namePrefix === 'captcha-after-60s' ? 'Captured 60 seconds after clicking Create' : undefined
     })
       .then((files) => {
         logger.warn(`SunoCaptchaSolver: saved browser diagnostics to ${files.prefix}.*`);

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Request } from 'playwright';
-import { extractCaptchaResult } from './sunoCaptchaTokenCapture';
+import { extractCaptchaResult, MissingCaptchaTokenError } from './sunoCaptchaTokenCapture';
 
 function createRequest(token: string | null, authorization?: string): Request {
   return {
@@ -11,10 +11,7 @@ function createRequest(token: string | null, authorization?: string): Request {
 }
 
 test('rejects a captured generate request without a captcha token', () => {
-  assert.throws(
-    () => extractCaptchaResult(createRequest(null)),
-    /did not contain a captcha token/
-  );
+  assert.throws(() => extractCaptchaResult(createRequest(null)), MissingCaptchaTokenError);
 });
 
 test('returns a non-empty captcha token and bearer authorization', () => {

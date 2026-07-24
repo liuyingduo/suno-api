@@ -5,10 +5,17 @@ export interface CaptchaResult {
   authorizationToken?: string;
 }
 
+export class MissingCaptchaTokenError extends Error {
+  constructor() {
+    super('Suno generate request did not contain a captcha token');
+    this.name = 'MissingCaptchaTokenError';
+  }
+}
+
 export function extractCaptchaResult(request: Request): CaptchaResult {
   const payload = request.postDataJSON() as { token?: string | null };
   if (!payload?.token) {
-    throw new Error('Suno generate request did not contain a captcha token');
+    throw new MissingCaptchaTokenError();
   }
 
   const authorization = request.headers().authorization;
