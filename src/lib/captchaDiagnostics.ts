@@ -6,6 +6,7 @@ const DIAGNOSTIC_DIR = path.join(process.cwd(), 'logs', 'captcha-diagnostics');
 
 export interface CaptchaDiagnosticFiles {
   prefix: string;
+  viewportScreenshotPath: string;
   screenshotPath: string;
   htmlPath: string;
   jsonPath: string;
@@ -35,7 +36,7 @@ export function formatConsoleMessage(message: ConsoleMessage): string {
   return `[${message.type()}] ${message.text()}`;
 }
 
-export async function saveCaptchaFailureDiagnostics(
+export async function saveCaptchaDiagnostics(
   input: CaptchaDiagnosticsInput
 ): Promise<CaptchaDiagnosticFiles> {
   const outputDirectory = input.outputDirectory ?? DIAGNOSTIC_DIR;
@@ -43,19 +44,27 @@ export async function saveCaptchaFailureDiagnostics(
   const prefix = path.join(outputDirectory, createDiagnosticName());
   const files: CaptchaDiagnosticFiles = {
     prefix,
+    viewportScreenshotPath: `${prefix}.viewport.png`,
     screenshotPath: `${prefix}.png`,
     htmlPath: `${prefix}.html`,
     jsonPath: `${prefix}.json`,
     frames: []
   };
+  await input.page.screenshot({ path: files.viewportScreenshotPath });
+  await input.page.screenshot({ path: files.screenshotPath, fullPage: true });
   const fingerprint = await readBrowserFingerprint(input.page);
   const frames = await saveFrameDiagnostics(input.page, prefix);
   files.frames = frames;
   await Promise.all([
-    input.page.screenshot({ path: files.screenshotPath, fullPage: true }),
     writeFile(files.htmlPath, await input.page.content(), 'utf8'),
     writeFile(files.jsonPath, JSON.stringify({
       url: input.page.url(),
+      files: {
+        viewportScreenshotPath: files.viewportScreenshotPath,
+        screenshotPath: files.screenshotPath,
+        htmlPath: files.htmlPath,
+        jsonPath: files.jsonPath
+      },
       userAgent: input.userAgent,
       error: serializeError(input.error),
       fingerprint,

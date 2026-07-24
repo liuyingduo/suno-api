@@ -7,6 +7,7 @@ interface NotifyCaptchaFailureInput {
   htmlPath: string;
   jsonPath: string;
   screenshotPath: string;
+  viewportScreenshotPath: string;
   videoPath?: string;
 }
 
@@ -17,6 +18,7 @@ export async function notifyCaptchaFailure(input: NotifyCaptchaFailureInput): Pr
 
   const text = [
     `Error: ${input.formatError(input.error)}`,
+    `Viewport screenshot: ${input.viewportScreenshotPath}`,
     `Screenshot: ${input.screenshotPath}`,
     `HTML: ${input.htmlPath}`,
     `Diagnostics: ${input.jsonPath}`,
@@ -26,6 +28,6 @@ export async function notifyCaptchaFailure(input: NotifyCaptchaFailureInput): Pr
   await input.feishuNotifier.notify({
     title: 'SunoCaptchaSolver failed',
     text,
-    imagePath: input.screenshotPath
+    imagePath: input.viewportScreenshotPath
   });
 }

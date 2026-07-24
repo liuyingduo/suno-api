@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { chromium } from 'playwright';
-import { saveCaptchaFailureDiagnostics } from './captchaDiagnostics';
+import { saveCaptchaDiagnostics } from './captchaDiagnostics';
 
 test('captures HTML, screenshot, and coordinates for unknown captcha frames', async () => {
   const outputDirectory = await mkdtemp(path.join(os.tmpdir(), 'suno-captcha-diagnostics-'));
@@ -26,7 +26,7 @@ test('captures HTML, screenshot, and coordinates for unknown captcha frames', as
       </html>
     `);
 
-    const files = await saveCaptchaFailureDiagnostics({
+    const files = await saveCaptchaDiagnostics({
       page,
       userAgent: 'diagnostic-test',
       consoleMessages: [],
@@ -41,6 +41,7 @@ test('captures HTML, screenshot, and coordinates for unknown captcha frames', as
     assert.ok((await stat(childFrame.screenshotPath)).size > 0);
     assert.equal(childFrame.element?.title, 'Unknown captcha');
     assert.ok(Number((childFrame.element?.rect as { width: number }).width) > 0);
+    assert.ok((await stat(files.viewportScreenshotPath)).size > 0);
     assert.ok((await stat(files.screenshotPath)).size > 0);
 
     const manifest = JSON.parse(await readFile(files.jsonPath, 'utf8')) as {

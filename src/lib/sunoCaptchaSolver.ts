@@ -4,7 +4,7 @@ import path from 'node:path';
 import { YesCaptchaAction, YesCaptchaClient } from '@/lib/yesCaptchaClient';
 import { sleep } from '@/lib/utils';
 import { FeishuNotifier } from '@/lib/feishuNotifier';
-import { CaptchaDiagnosticFiles, formatConsoleMessage, saveCaptchaFailureDiagnostics } from '@/lib/captchaDiagnostics';
+import { CaptchaDiagnosticFiles, formatConsoleMessage, saveCaptchaDiagnostics } from '@/lib/captchaDiagnostics';
 import { notifyCaptchaFailure } from '@/lib/sunoCaptchaFailureNotifier';
 import {
   attachCaptchaNetworkLogging,
@@ -16,6 +16,7 @@ import {
   CREATE_SONG_BUTTON_SELECTOR,
   PROMPT_TEXTAREA_SELECTOR
 } from '@/lib/sunoCreateSelectors';
+import { CaptchaResult, extractCaptchaResult } from '@/lib/sunoCaptchaTokenCapture';
 
 const logger = pino();
 const SUNO_CREATE_URL = 'https://suno.com/create';
@@ -32,16 +33,12 @@ interface SunoCaptchaSolverOptions {
   currentToken?: string;
 }
 
-interface CaptchaResult {
-  token: string | null;
-  authorizationToken?: string;
-}
-
 export class SunoCaptchaSolver {
   private readonly yesCaptcha = new YesCaptchaClient(process.env.YESCAPTCHA_KEY ?? '');
   private readonly feishuNotifier = new FeishuNotifier();
   private readonly consoleMessages: string[] = [];
   private tokenCaptured = false;
+  private diagnosticFiles?: CaptchaDiagnosticFiles;
 
   constructor(private readonly options: SunoCaptchaSolverOptions) {}
 
@@ -75,7 +72,9 @@ export class SunoCaptchaSolver {
       failure = error;
       throw error;
     } finally {
-      const files = CAPTCHA_DEBUG_SAVE && !this.tokenCaptured ? await this.handleFailureDiagnostics(page, failure) : undefined;
+      const files = CAPTCHA_DEBUG_SAVE
+        ? this.diagnosticFiles ?? await this.saveDiagnostics(page, failure)
+        : undefined;
       abortController.abort();
       const videoPath = CAPTCHA_DEBUG_SAVE ? await this.closeBrowserWithVideoLog(page, browser) : undefined;
       if (!CAPTCHA_DEBUG_SAVE) await browser.close();
@@ -238,11 +237,23 @@ export class SunoCaptchaSolver {
         try {
           const request = route.request();
           logger.info('SunoCaptchaSolver: captured Suno generate request');
+          let result: CaptchaResult;
+          try {
+            result = extractCaptchaResult(request);
+          } catch (error) {
+            logger.warn(`SunoCaptchaSolver: ${this.formatError(error)}`);
+            if (CAPTCHA_DEBUG_SAVE) await this.saveDiagnostics(page, error);
+            await route.abort();
+            clearTimeout(timeout);
+            reject(error);
+            return;
+          }
+          if (CAPTCHA_DEBUG_SAVE) await this.saveDiagnostics(page, undefined);
           await route.abort();
           clearTimeout(timeout);
           abortController.abort();
           this.tokenCaptured = true;
-          resolve(this.extractCaptchaResult(request));
+          resolve(result);
         } catch (error) {
           clearTimeout(timeout);
           reject(error);
@@ -252,18 +263,6 @@ export class SunoCaptchaSolver {
         reject(error);
       });
     });
-  }
-
-  private extractCaptchaResult(request: Request): CaptchaResult {
-    const payload = request.postDataJSON() as { token?: string | null };
-    const authorization = request.headers().authorization;
-    const authorizationToken = authorization?.startsWith('Bearer ')
-      ? authorization.replace('Bearer ', '')
-      : undefined;
-    return {
-      token: payload?.token ?? null,
-      authorizationToken
-    };
   }
 
   private async solveChallenges(page: Page, signal: AbortSignal): Promise<void> {
@@ -423,18 +422,22 @@ export class SunoCaptchaSolver {
     });
   }
 
-  private async handleFailureDiagnostics(
+  private async saveDiagnostics(
     page: Page,
     error: unknown
   ): Promise<CaptchaDiagnosticFiles | undefined> {
+    if (this.diagnosticFiles) {
+      return this.diagnosticFiles;
+    }
     try {
-      const files = await saveCaptchaFailureDiagnostics({
+      const files = await saveCaptchaDiagnostics({
         page,
         userAgent: this.options.userAgent,
         consoleMessages: this.consoleMessages,
         error
       });
-      logger.warn(`SunoCaptchaSolver: saved failure diagnostics to ${files.prefix}.*`);
+      this.diagnosticFiles = files;
+      logger.warn(`SunoCaptchaSolver: saved browser diagnostics to ${files.prefix}.*`);
       return files;
     } catch (diagnosticError) {
       logger.warn(`SunoCaptchaSolver: failed to save diagnostics: ${this.formatError(diagnosticError)}`);
@@ -477,6 +480,7 @@ export class SunoCaptchaSolver {
         htmlPath: files.htmlPath,
         jsonPath: files.jsonPath,
         screenshotPath: files.screenshotPath,
+        viewportScreenshotPath: files.viewportScreenshotPath,
         videoPath
       });
       logger.info('SunoCaptchaSolver: sent failure diagnostics to Feishu');
