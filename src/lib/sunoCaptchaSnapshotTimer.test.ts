@@ -9,7 +9,7 @@ test('reports when the diagnostic delay elapses', async () => {
 
 test('stops waiting when captcha solving finishes', async () => {
   const controller = new AbortController();
-  const waiting = waitForDelay(60_000, controller.signal);
+  const waiting = waitForDelay(80_000, controller.signal);
   controller.abort();
   assert.equal(await waiting, false);
 });
