@@ -3,7 +3,7 @@ import test from 'node:test';
 import { chromium } from 'playwright';
 import { clickTurnstileCheckbox } from './sunoTurnstileChallenge';
 
-test('clicks the checkbox position inside a cross-origin Turnstile iframe', async () => {
+test('clicks Turnstile inside a cross-origin closed shadow root', async () => {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 
@@ -17,6 +17,7 @@ test('clicks the checkbox position inside a cross-origin Turnstile iframe', asyn
       body: createTurnstileFrame()
     }));
     await page.goto('https://suno.com/create');
+    assert.equal(await page.locator('iframe').count(), 0);
 
     await clickTurnstileCheckbox(page);
     await page.waitForFunction(() => (
@@ -35,16 +36,18 @@ test('clicks the checkbox position inside a cross-origin Turnstile iframe', asyn
 
 function createParentPage(): string {
   return `
-    <iframe
-      id="turnstile-widget"
-      title="Widget containing a Cloudflare security challenge"
-      src="https://challenges.cloudflare.com/cdn-cgi/challenge-platform/turnstile/test"
-      style="position:absolute;left:490px;top:364px;width:1px;height:1px;border:0"
-    ></iframe>
+    <body>
     <script>
       window.turnstileClicked = false;
+      const host = document.createElement('div');
+      document.body.append(host);
+      const shadowRoot = host.attachShadow({ mode: 'closed' });
+      const iframe = document.createElement('iframe');
+      iframe.title = 'Widget containing a Cloudflare security challenge';
+      iframe.src = 'https://challenges.cloudflare.com/cdn-cgi/challenge-platform/turnstile/test';
+      iframe.style.cssText = 'position:absolute;left:490px;top:364px;width:1px;height:1px;border:0';
+      shadowRoot.append(iframe);
       setTimeout(() => {
-        const iframe = document.querySelector('#turnstile-widget');
         iframe.style.width = '300px';
         iframe.style.height = '65px';
       }, 100);
@@ -52,6 +55,7 @@ function createParentPage(): string {
         if (event.data === 'turnstile-clicked') window.turnstileClicked = true;
       });
     </script>
+    </body>
   `;
 }
 
