@@ -15,6 +15,7 @@ import { saveCaptchaChallengeSnapshot } from '@/lib/captchaChallengeSnapshot';
 import { CREATE_SONG_BUTTON_SELECTOR, PROMPT_TEXTAREA_SELECTOR } from '@/lib/sunoCreateSelectors';
 import { CaptchaResult, extractCaptchaResult, MissingCaptchaTokenError } from '@/lib/sunoCaptchaTokenCapture';
 import { saveCaptchaSnapshotAfterDelay } from '@/lib/sunoCaptchaSnapshotTimer';
+import { clickTurnstileCheckbox } from '@/lib/sunoTurnstileChallenge';
 
 const logger = pino();
 const SUNO_CREATE_URL = 'https://suno.com/create';
@@ -232,7 +233,7 @@ export class SunoCaptchaSolver {
   private captureGenerateToken(page: Page, abortController: AbortController): Promise<CaptchaResult> {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        reject(new Error('Timed out waiting for hCaptcha token from Suno generate request'));
+        reject(new Error('Timed out waiting for captcha token from Suno generate request'));
       }, CAPTCHA_TIMEOUT_MS);
 
       page.route(`**${GENERATE_URL_PART}**`, async (route) => {
@@ -266,6 +267,10 @@ export class SunoCaptchaSolver {
   }
 
   private async solveChallenges(page: Page, signal: AbortSignal): Promise<void> {
+    logger.info('SunoCaptchaSolver: waiting for Cloudflare Turnstile checkbox');
+    await clickTurnstileCheckbox(page);
+    logger.info('SunoCaptchaSolver: clicked Cloudflare Turnstile checkbox');
+
     const frame = page.frameLocator('iframe[title*="hCaptcha"]');
     const challenge = frame.locator('.challenge-container');
     while (!signal.aborted) {
