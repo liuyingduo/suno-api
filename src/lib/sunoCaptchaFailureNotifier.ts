@@ -4,6 +4,7 @@ interface NotifyCaptchaFailureInput {
   error: unknown;
   feishuNotifier: FeishuNotifier;
   formatError: (error: unknown) => string;
+  htmlPath: string;
   jsonPath: string;
   screenshotPath: string;
   videoPath?: string;
@@ -17,6 +18,7 @@ export async function notifyCaptchaFailure(input: NotifyCaptchaFailureInput): Pr
   const text = [
     `Error: ${input.formatError(input.error)}`,
     `Screenshot: ${input.screenshotPath}`,
+    `HTML: ${input.htmlPath}`,
     `Diagnostics: ${input.jsonPath}`,
     input.videoPath ? `Recording: ${input.videoPath}` : undefined
   ].filter((line) => line !== undefined).join('\n');

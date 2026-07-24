@@ -474,6 +474,7 @@ export class SunoCaptchaSolver {
         error,
         feishuNotifier: this.feishuNotifier,
         formatError: this.formatError,
+        htmlPath: files.htmlPath,
         jsonPath: files.jsonPath,
         screenshotPath: files.screenshotPath,
         videoPath
