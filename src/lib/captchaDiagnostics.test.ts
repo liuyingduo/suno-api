@@ -31,6 +31,8 @@ test('captures HTML, screenshot, and coordinates for unknown captcha frames', as
       userAgent: 'diagnostic-test',
       consoleMessages: [],
       error: new Error('Timed out waiting for captcha token'),
+      namePrefix: 'captcha-turnstile-visible',
+      reason: 'Cloudflare Turnstile iframe became visible',
       outputDirectory
     });
     const childFrame = files.frames.find((frame) => frame.name === 'captcha-frame');
@@ -43,10 +45,13 @@ test('captures HTML, screenshot, and coordinates for unknown captcha frames', as
     assert.ok(Number((childFrame.element?.rect as { width: number }).width) > 0);
     assert.ok((await stat(files.viewportScreenshotPath)).size > 0);
     assert.ok((await stat(files.screenshotPath)).size > 0);
+    assert.match(path.basename(files.prefix), /^captcha-turnstile-visible-/);
 
     const manifest = JSON.parse(await readFile(files.jsonPath, 'utf8')) as {
+      reason: string;
       frames: Array<{ name: string; htmlPath: string }>;
     };
+    assert.equal(manifest.reason, 'Cloudflare Turnstile iframe became visible');
     assert.ok(manifest.frames.some((frame) => frame.name === 'captcha-frame'));
   } finally {
     await browser.close();

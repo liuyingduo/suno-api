@@ -29,7 +29,9 @@ interface CaptchaDiagnosticsInput {
   userAgent: string;
   consoleMessages: string[];
   error?: unknown;
+  namePrefix?: string;
   outputDirectory?: string;
+  reason?: string;
 }
 
 export function formatConsoleMessage(message: ConsoleMessage): string {
@@ -41,7 +43,7 @@ export async function saveCaptchaDiagnostics(
 ): Promise<CaptchaDiagnosticFiles> {
   const outputDirectory = input.outputDirectory ?? DIAGNOSTIC_DIR;
   await mkdir(outputDirectory, { recursive: true });
-  const prefix = path.join(outputDirectory, createDiagnosticName());
+  const prefix = path.join(outputDirectory, createDiagnosticName(input.namePrefix));
   const files: CaptchaDiagnosticFiles = {
     prefix,
     viewportScreenshotPath: `${prefix}.viewport.png`,
@@ -66,6 +68,7 @@ export async function saveCaptchaDiagnostics(
         jsonPath: files.jsonPath
       },
       userAgent: input.userAgent,
+      reason: input.reason,
       error: serializeError(input.error),
       fingerprint,
       consoleMessages: input.consoleMessages,
@@ -137,8 +140,8 @@ async function readFrameElement(
   });
 }
 
-function createDiagnosticName(): string {
-  return `captcha-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+function createDiagnosticName(prefix = 'captcha'): string {
+  return `${prefix}-${new Date().toISOString().replace(/[:.]/g, '-')}`;
 }
 
 function serializeError(error: unknown): Record<string, string> | undefined {

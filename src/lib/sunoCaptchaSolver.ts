@@ -12,11 +12,9 @@ import {
 } from '@/lib/sunoCaptchaNetworkLogging';
 import { closeKnownPopups } from '@/lib/sunoPopupHandler';
 import { saveCaptchaChallengeSnapshot } from '@/lib/captchaChallengeSnapshot';
-import {
-  CREATE_SONG_BUTTON_SELECTOR,
-  PROMPT_TEXTAREA_SELECTOR
-} from '@/lib/sunoCreateSelectors';
+import { CREATE_SONG_BUTTON_SELECTOR, PROMPT_TEXTAREA_SELECTOR } from '@/lib/sunoCreateSelectors';
 import { CaptchaResult, extractCaptchaResult } from '@/lib/sunoCaptchaTokenCapture';
+import { watchForVisibleTurnstile } from '@/lib/sunoTurnstileWatcher';
 
 const logger = pino();
 const SUNO_CREATE_URL = 'https://suno.com/create';
@@ -38,7 +36,7 @@ export class SunoCaptchaSolver {
   private readonly feishuNotifier = new FeishuNotifier();
   private readonly consoleMessages: string[] = [];
   private tokenCaptured = false;
-  private diagnosticFiles?: CaptchaDiagnosticFiles;
+  private diagnosticFilesPromise?: Promise<CaptchaDiagnosticFiles | undefined>;
 
   constructor(private readonly options: SunoCaptchaSolverOptions) {}
 
@@ -50,6 +48,9 @@ export class SunoCaptchaSolver {
     const page = await context.newPage();
     this.attachConsoleLogging(page);
     const abortController = new AbortController();
+    const turnstileWatcher = CAPTCHA_DEBUG_SAVE
+      ? watchForVisibleTurnstile(page, abortController.signal, logger, () => this.saveDiagnostics(page, undefined, 'captcha-turnstile-visible'))
+      : undefined;
     let failure: unknown;
 
     try {
@@ -72,10 +73,9 @@ export class SunoCaptchaSolver {
       failure = error;
       throw error;
     } finally {
-      const files = CAPTCHA_DEBUG_SAVE
-        ? this.diagnosticFiles ?? await this.saveDiagnostics(page, failure)
-        : undefined;
+      const files = CAPTCHA_DEBUG_SAVE ? await this.saveDiagnostics(page, failure) : undefined;
       abortController.abort();
+      await turnstileWatcher;
       const videoPath = CAPTCHA_DEBUG_SAVE ? await this.closeBrowserWithVideoLog(page, browser) : undefined;
       if (!CAPTCHA_DEBUG_SAVE) await browser.close();
       if (CAPTCHA_DEBUG_SAVE && !this.tokenCaptured) {
@@ -424,25 +424,27 @@ export class SunoCaptchaSolver {
 
   private async saveDiagnostics(
     page: Page,
-    error: unknown
+    error: unknown,
+    namePrefix?: string
   ): Promise<CaptchaDiagnosticFiles | undefined> {
-    if (this.diagnosticFiles) {
-      return this.diagnosticFiles;
-    }
-    try {
-      const files = await saveCaptchaDiagnostics({
-        page,
-        userAgent: this.options.userAgent,
-        consoleMessages: this.consoleMessages,
-        error
+    if (this.diagnosticFilesPromise) return this.diagnosticFilesPromise;
+    this.diagnosticFilesPromise = saveCaptchaDiagnostics({
+      page,
+      userAgent: this.options.userAgent,
+      consoleMessages: this.consoleMessages,
+      error,
+      namePrefix,
+      reason: namePrefix === 'captcha-turnstile-visible' ? 'Cloudflare Turnstile iframe became visible' : undefined
+    })
+      .then((files) => {
+        logger.warn(`SunoCaptchaSolver: saved browser diagnostics to ${files.prefix}.*`);
+        return files;
+      })
+      .catch((diagnosticError) => {
+        logger.warn(`SunoCaptchaSolver: failed to save diagnostics: ${this.formatError(diagnosticError)}`);
+        return undefined;
       });
-      this.diagnosticFiles = files;
-      logger.warn(`SunoCaptchaSolver: saved browser diagnostics to ${files.prefix}.*`);
-      return files;
-    } catch (diagnosticError) {
-      logger.warn(`SunoCaptchaSolver: failed to save diagnostics: ${this.formatError(diagnosticError)}`);
-      return undefined;
-    }
+    return this.diagnosticFilesPromise;
   }
 
   private async closeBrowserWithVideoLog(page: Page, browser: Browser): Promise<string | undefined> {
