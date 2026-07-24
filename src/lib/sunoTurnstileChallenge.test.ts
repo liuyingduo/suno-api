@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { chromium } from 'playwright';
-import { clickTurnstileCheckbox } from './sunoTurnstileChallenge';
+import { solveTurnstileChallenges } from './sunoTurnstileChallenge';
 
-test('clicks Turnstile inside a cross-origin closed shadow root', async () => {
+test('retries Turnstile failure inside a cross-origin closed shadow root', async () => {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  const controller = new AbortController();
 
   try {
     await page.route('https://suno.com/create', (route) => route.fulfill({
@@ -19,17 +20,24 @@ test('clicks Turnstile inside a cross-origin closed shadow root', async () => {
     await page.goto('https://suno.com/create');
     assert.equal(await page.locator('iframe').count(), 0);
 
-    await clickTurnstileCheckbox(page);
+    const attempts: number[] = [];
+    const solving = solveTurnstileChallenges(page, controller.signal, (attempt) => {
+      attempts.push(attempt);
+    });
     await page.waitForFunction(() => (
-      window as typeof window & { turnstileClicked: boolean }
-    ).turnstileClicked);
+      window as typeof window & { turnstileClickCount: number }
+    ).turnstileClickCount === 2, undefined, { timeout: 15_000 });
+    controller.abort();
+    await solving;
     assert.equal(
       await page.evaluate(() => (
-        window as typeof window & { turnstileClicked: boolean }
-      ).turnstileClicked),
-      true
+        window as typeof window & { turnstileClickCount: number }
+      ).turnstileClickCount),
+      2
     );
+    assert.deepEqual(attempts, [1, 2]);
   } finally {
+    controller.abort();
     await browser.close();
   }
 });
@@ -38,7 +46,7 @@ function createParentPage(): string {
   return `
     <body>
     <script>
-      window.turnstileClicked = false;
+      window.turnstileClickCount = 0;
       const host = document.createElement('div');
       document.body.append(host);
       const shadowRoot = host.attachShadow({ mode: 'closed' });
@@ -52,7 +60,7 @@ function createParentPage(): string {
         iframe.style.height = '65px';
       }, 100);
       window.addEventListener('message', (event) => {
-        if (event.data === 'turnstile-clicked') window.turnstileClicked = true;
+        if (event.data === 'turnstile-clicked') window.turnstileClickCount++;
       });
     </script>
     </body>
@@ -63,11 +71,17 @@ function createTurnstileFrame(): string {
   return `
     <style>html,body{width:300px;height:65px;margin:0}</style>
     <script>
+      const retryUrl = 'https://challenges.cloudflare.com/cdn-cgi/challenge-platform/turnstile/failure_retry/normal';
       setTimeout(() => {
         const button = document.createElement('button');
         button.setAttribute('aria-label', 'Verify you are human');
         button.style.cssText = 'position:absolute;left:8px;top:20px;width:24px;height:24px';
-        button.addEventListener('click', () => parent.postMessage('turnstile-clicked', '*'));
+        button.addEventListener('click', () => {
+          parent.postMessage('turnstile-clicked', '*');
+          if (!location.href.includes('/failure_retry/')) {
+            setTimeout(() => location.href = retryUrl, 100);
+          }
+        });
         document.body.append(button);
       }, 500);
     </script>

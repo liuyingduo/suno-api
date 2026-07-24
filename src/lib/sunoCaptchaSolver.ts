@@ -15,7 +15,7 @@ import { saveCaptchaChallengeSnapshot } from '@/lib/captchaChallengeSnapshot';
 import { CREATE_SONG_BUTTON_SELECTOR, PROMPT_TEXTAREA_SELECTOR } from '@/lib/sunoCreateSelectors';
 import { CaptchaResult, extractCaptchaResult, MissingCaptchaTokenError } from '@/lib/sunoCaptchaTokenCapture';
 import { saveCaptchaSnapshotAfterDelay } from '@/lib/sunoCaptchaSnapshotTimer';
-import { clickTurnstileCheckbox } from '@/lib/sunoTurnstileChallenge';
+import { solveTurnstileChallenges } from '@/lib/sunoTurnstileChallenge';
 
 const logger = pino();
 const SUNO_CREATE_URL = 'https://suno.com/create';
@@ -66,10 +66,10 @@ export class SunoCaptchaSolver {
         delayedSnapshot = saveCaptchaSnapshotAfterDelay(abortController.signal,
           () => this.saveDiagnostics(page, undefined, 'captcha-after-20s'));
       }
-      await Promise.race([this.solveChallenges(page, abortController.signal), tokenPromise])
-        .catch((error) => {
-          logger.warn(`SunoCaptchaSolver: challenge loop ended before token capture: ${error?.message ?? error}`);
-        });
+      await Promise.race([
+        this.waitForChallengeHandlers(page, abortController.signal),
+        tokenPromise
+      ]);
       logger.info('SunoCaptchaSolver: waiting for generate token capture');
       return await tokenPromise;
     } catch (error) {
@@ -93,11 +93,8 @@ export class SunoCaptchaSolver {
       headless: process.env.BROWSER_HEADLESS !== 'false',
       args: [
         '--disable-blink-features=AutomationControlled',
-        '--disable-web-security',
         '--no-sandbox',
         '--disable-dev-shm-usage',
-        '--disable-features=site-per-process',
-        '--disable-features=IsolateOrigins',
         '--disable-extensions',
         '--disable-infobars'
       ]
@@ -266,11 +263,26 @@ export class SunoCaptchaSolver {
     });
   }
 
-  private async solveChallenges(page: Page, signal: AbortSignal): Promise<void> {
-    logger.info('SunoCaptchaSolver: waiting for Cloudflare Turnstile checkbox');
-    await clickTurnstileCheckbox(page);
-    logger.info('SunoCaptchaSolver: clicked Cloudflare Turnstile checkbox');
+  private async waitForChallengeHandlers(page: Page, signal: AbortSignal): Promise<never> {
+    const results = await Promise.allSettled([
+      solveTurnstileChallenges(page, signal, (attempt, retry) => {
+        logger.info(
+          `SunoCaptchaSolver: clicked Cloudflare Turnstile checkbox ` +
+          `(attempt ${attempt}${retry ? ', failure retry' : ''})`
+        );
+      }),
+      this.solveChallenges(page, signal)
+    ]);
+    const errors = results
+      .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+      .map((result) => result.reason);
+    for (const error of errors) {
+      logger.warn(`SunoCaptchaSolver: challenge handler ended: ${this.formatError(error)}`);
+    }
+    throw new AggregateError(errors, 'All captcha challenge handlers ended before token capture');
+  }
 
+  private async solveChallenges(page: Page, signal: AbortSignal): Promise<void> {
     const frame = page.frameLocator('iframe[title*="hCaptcha"]');
     const challenge = frame.locator('.challenge-container');
     while (!signal.aborted) {
