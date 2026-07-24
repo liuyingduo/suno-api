@@ -5,6 +5,8 @@ const TURNSTILE_IFRAME_SELECTOR = [
   'iframe[src*="challenges.cloudflare.com"][src*="/turnstile/"]'
 ].join(',');
 const TURNSTILE_WAIT_TIMEOUT_MS = 60_000;
+const TURNSTILE_INTERACTIVE_WAIT_MS = 1_000;
+const TURNSTILE_CLICK_DELAY_MS = 100;
 const TURNSTILE_CHECKBOX_OFFSET_X = 20;
 const TURNSTILE_MIN_WIDTH = 200;
 const TURNSTILE_MIN_HEIGHT = 50;
@@ -32,8 +34,15 @@ export async function clickTurnstileCheckbox(page: Page): Promise<void> {
     throw new Error(`Cloudflare Turnstile iframe has unexpected size ${box.width}x${box.height}`);
   }
 
-  await page.mouse.click(
-    box.x + TURNSTILE_CHECKBOX_OFFSET_X,
-    box.y + box.height / 2
-  );
+  const frameBody = iframe.contentFrame().locator('body');
+  await frameBody.waitFor({ state: 'visible', timeout: TURNSTILE_WAIT_TIMEOUT_MS });
+  await page.waitForTimeout(TURNSTILE_INTERACTIVE_WAIT_MS);
+  await frameBody.click({
+    force: true,
+    delay: TURNSTILE_CLICK_DELAY_MS,
+    position: {
+      x: TURNSTILE_CHECKBOX_OFFSET_X,
+      y: box.height / 2
+    }
+  });
 }
