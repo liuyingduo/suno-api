@@ -8,15 +8,18 @@ const TURNSTILE_OUTCOME_TIMEOUT_MS = 30_000;
 const TURNSTILE_POLL_INTERVAL_MS = 250;
 const TURNSTILE_INTERACTIVE_WAIT_MS = 1_000;
 const TURNSTILE_RETRY_DELAY_MS = 3_000;
-const TURNSTILE_CLICK_DELAY_MS = 100;
 const TURNSTILE_CHECKBOX_OFFSET_X = 20;
+const TURNSTILE_MOUSE_APPROACH_OFFSET_X = 48;
+const TURNSTILE_MOUSE_APPROACH_OFFSET_Y = 18;
+const TURNSTILE_MOUSE_MOVE_STEPS = 12;
+const TURNSTILE_MOUSE_DOWN_DELAY_MS = 120;
 const TURNSTILE_MIN_WIDTH = 200;
 const TURNSTILE_MIN_HEIGHT = 50;
 const TURNSTILE_MAX_ATTEMPTS = 3;
 
 interface TurnstileFrame {
   frame: Frame;
-  height: number;
+  box: { x: number; y: number; width: number; height: number };
   url: string;
 }
 
@@ -31,17 +34,11 @@ export async function solveTurnstileChallenges(
     const frameBody = challenge.frame.locator('body');
     await frameBody.waitFor({ state: 'visible', timeout: TURNSTILE_WAIT_TIMEOUT_MS });
     if (!await waitForDuration(page, signal, TURNSTILE_INTERACTIVE_WAIT_MS)) return;
-    await frameBody.click({
-      force: true,
-      delay: TURNSTILE_CLICK_DELAY_MS,
-      position: {
-        x: TURNSTILE_CHECKBOX_OFFSET_X,
-        y: challenge.height / 2
-      }
-    });
+    const clickedChallenge = await clickTurnstileWithMouse(page, challenge, signal);
+    if (!clickedChallenge) return;
     onClick(attempt, challenge.url.includes(TURNSTILE_FAILURE_RETRY_URL_PART));
 
-    const retryRequired = await waitForTurnstileOutcome(page, challenge, signal);
+    const retryRequired = await waitForTurnstileOutcome(page, clickedChallenge, signal);
     if (!retryRequired) return;
     if (attempt === TURNSTILE_MAX_ATTEMPTS) {
       throw new Error(`Cloudflare Turnstile failed after ${TURNSTILE_MAX_ATTEMPTS} attempts`);
@@ -100,14 +97,39 @@ async function findReadyTurnstileFrame(
 
 async function readReadyTurnstileFrame(frame: Frame): Promise<TurnstileFrame | undefined> {
   try {
-    const box = await (await frame.frameElement()).boundingBox();
+    const frameElement = await frame.frameElement();
+    await frameElement.scrollIntoViewIfNeeded();
+    const box = await frameElement.boundingBox();
     if (box && box.width >= TURNSTILE_MIN_WIDTH && box.height >= TURNSTILE_MIN_HEIGHT) {
-      return { frame, height: box.height, url: frame.url() };
+      return { frame, box, url: frame.url() };
     }
   } catch {
     // Turnstile replaces its frame while initializing; retry the active frame.
   }
   return undefined;
+}
+
+async function clickTurnstileWithMouse(
+  page: Page,
+  challenge: TurnstileFrame,
+  signal: AbortSignal
+): Promise<TurnstileFrame | undefined> {
+  const readyChallenge = await readReadyTurnstileFrame(challenge.frame);
+  if (!readyChallenge || signal.aborted) return undefined;
+
+  const targetX = readyChallenge.box.x + TURNSTILE_CHECKBOX_OFFSET_X;
+  const targetY = readyChallenge.box.y + readyChallenge.box.height / 2;
+  await page.mouse.move(
+    Math.max(0, targetX - TURNSTILE_MOUSE_APPROACH_OFFSET_X),
+    Math.max(0, targetY + TURNSTILE_MOUSE_APPROACH_OFFSET_Y),
+    { steps: TURNSTILE_MOUSE_MOVE_STEPS }
+  );
+  await page.mouse.move(targetX, targetY, { steps: TURNSTILE_MOUSE_MOVE_STEPS });
+  if (signal.aborted) return undefined;
+  await page.mouse.down();
+  await page.waitForTimeout(TURNSTILE_MOUSE_DOWN_DELAY_MS);
+  await page.mouse.up();
+  return readyChallenge;
 }
 
 function isTurnstileFrame(frame: Frame): boolean {

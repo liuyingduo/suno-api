@@ -36,6 +36,12 @@ test('retries Turnstile failure inside a cross-origin closed shadow root', async
       2
     );
     assert.deepEqual(attempts, [1, 2]);
+    assert.deepEqual(
+      await page.evaluate(() => (
+        window as typeof window & { turnstileMouseEvents: string[] }
+      ).turnstileMouseEvents),
+      ['pointerdown:true', 'mousedown:true', 'pointerup:true', 'mouseup:true', 'click:true']
+    );
   } finally {
     controller.abort();
     await browser.close();
@@ -47,6 +53,7 @@ function createParentPage(): string {
     <body>
     <script>
       window.turnstileClickCount = 0;
+      window.turnstileMouseEvents = [];
       const host = document.createElement('div');
       document.body.append(host);
       const shadowRoot = host.attachShadow({ mode: 'closed' });
@@ -61,6 +68,7 @@ function createParentPage(): string {
       }, 100);
       window.addEventListener('message', (event) => {
         if (event.data === 'turnstile-clicked') window.turnstileClickCount++;
+        if (event.data.type === 'turnstile-events') window.turnstileMouseEvents = event.data.events;
       });
     </script>
     </body>
@@ -76,8 +84,15 @@ function createTurnstileFrame(): string {
         const button = document.createElement('button');
         button.setAttribute('aria-label', 'Verify you are human');
         button.style.cssText = 'position:absolute;left:8px;top:20px;width:24px;height:24px';
+        const mouseEvents = [];
+        for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+          button.addEventListener(type, (event) => {
+            mouseEvents.push(type + ':' + event.isTrusted);
+          });
+        }
         button.addEventListener('click', () => {
           parent.postMessage('turnstile-clicked', '*');
+          parent.postMessage({ type: 'turnstile-events', events: mouseEvents }, '*');
           if (!location.href.includes('/failure_retry/')) {
             setTimeout(() => location.href = retryUrl, 100);
           }
