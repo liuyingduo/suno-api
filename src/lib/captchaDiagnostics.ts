@@ -2,6 +2,10 @@ import { ConsoleMessage, Frame, Page } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { CaptchaNetworkEvent } from './sunoCaptchaNetworkLogging';
+import {
+  sanitizeDiagnosticUrl,
+  SENSITIVE_DIAGNOSTIC_QUERY_PARAMETERS
+} from './captchaDiagnosticSanitizer';
 
 const DIAGNOSTIC_DIR = path.join(process.cwd(), 'logs', 'captcha-diagnostics');
 
@@ -39,7 +43,7 @@ interface CaptchaDiagnosticsInput {
 export function formatConsoleMessage(message: ConsoleMessage): string {
   const location = message.location();
   const source = location.url
-    ? ` ${location.url}:${location.lineNumber}:${location.columnNumber}`
+    ? ` ${sanitizeDiagnosticUrl(location.url)}:${location.lineNumber}:${location.columnNumber}`
     : '';
   return `[${message.type()}]${source} ${message.text()}`;
 }
@@ -62,11 +66,12 @@ export async function saveCaptchaDiagnostics(
   await input.page.screenshot({ path: files.screenshotPath, fullPage: true });
   const fingerprint = await readBrowserFingerprint(input.page);
   const frames = await saveFrameDiagnostics(input.page, prefix);
+  const pageHtml = await readSanitizedFrameContent(input.page.mainFrame());
   files.frames = frames;
   await Promise.all([
-    writeFile(files.htmlPath, await input.page.content(), 'utf8'),
+    writeFile(files.htmlPath, pageHtml, 'utf8'),
     writeFile(files.jsonPath, JSON.stringify({
-      url: input.page.url(),
+      url: sanitizeDiagnosticUrl(input.page.url()),
       files: {
         viewportScreenshotPath: files.viewportScreenshotPath,
         screenshotPath: files.screenshotPath,
@@ -99,18 +104,24 @@ async function saveFrameDiagnostic(
   prefix: string
 ): Promise<CaptchaFrameDiagnostic> {
   const framePrefix = `${prefix}.frame-${String(index).padStart(2, '0')}`;
+  const parentFrame = frame.parentFrame();
   const diagnostic: CaptchaFrameDiagnostic = {
     index,
     name: frame.name(),
-    url: frame.url(),
-    parentUrl: frame.parentFrame()?.url(),
+    url: sanitizeDiagnosticUrl(frame.url()),
+    parentUrl: parentFrame
+      ? sanitizeDiagnosticUrl(parentFrame.url())
+      : undefined,
     htmlPath: `${framePrefix}.html`
   };
 
   try {
-    await writeFile(diagnostic.htmlPath, await frame.content(), 'utf8');
+    await writeFile(diagnostic.htmlPath, await readSanitizedFrameContent(frame), 'utf8');
     const frameElement = await frame.frameElement();
     diagnostic.element = await readFrameElement(frameElement);
+    if (typeof diagnostic.element.src === 'string') {
+      diagnostic.element.src = sanitizeDiagnosticUrl(diagnostic.element.src);
+    }
     const screenshotPath = `${framePrefix}.png`;
     await frameElement.screenshot({ path: screenshotPath, timeout: 10_000 });
     diagnostic.screenshotPath = screenshotPath;
@@ -119,6 +130,43 @@ async function saveFrameDiagnostic(
   }
 
   return diagnostic;
+}
+
+async function readSanitizedFrameContent(frame: Frame): Promise<string> {
+  return frame.evaluate((sensitiveParameterNames) => {
+    const sourceUrl = new URL(window.location.href);
+    const secrets = sensitiveParameterNames
+      .flatMap((name) => sourceUrl.searchParams.getAll(name))
+      .filter((value) => value.length > 0)
+      .flatMap((value) => [value, encodeURIComponent(value)]);
+    const clone = document.documentElement.cloneNode(true) as HTMLElement;
+
+    for (const element of clone.querySelectorAll<HTMLElement>('[href], [src], [action], [formaction], [poster]')) {
+      for (const attribute of ['href', 'src', 'action', 'formaction', 'poster']) {
+        const value = element.getAttribute(attribute);
+        if (!value) continue;
+        try {
+          const url = new URL(value, sourceUrl);
+          if (url.protocol === 'http:' || url.protocol === 'https:') {
+            element.setAttribute(attribute, `${url.origin}${url.pathname}`);
+          }
+        } catch {
+          // Keep non-URL attribute values unchanged.
+        }
+      }
+    }
+
+    const walker = document.createTreeWalker(clone, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      for (const secret of secrets) {
+        node.nodeValue = node.nodeValue?.replaceAll(secret, '[redacted]') ?? null;
+      }
+    }
+
+    const doctype = document.doctype ? `<!DOCTYPE ${document.doctype.name}>\n` : '';
+    return `${doctype}${clone.outerHTML}`;
+  }, [...SENSITIVE_DIAGNOSTIC_QUERY_PARAMETERS]);
 }
 
 async function readFrameElement(

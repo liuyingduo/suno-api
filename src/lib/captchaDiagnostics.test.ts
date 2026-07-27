@@ -12,10 +12,14 @@ test('captures HTML, screenshot, and coordinates for unknown captcha frames', as
 
   try {
     const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
-    await page.setContent(`
+    await page.route('https://suno.com/create*', (route) => route.fulfill({
+      contentType: 'text/html',
+      body: `
       <!doctype html>
       <html>
         <body>
+          <a href="/next?token=secret-handshake">Next</a>
+          <script>window.handshake = 'secret-handshake'; window.mode = 'auto'</script>
           <iframe
             name="captcha-frame"
             title="Unknown captcha"
@@ -24,7 +28,9 @@ test('captures HTML, screenshot, and coordinates for unknown captcha frames', as
           ></iframe>
         </body>
       </html>
-    `);
+      `
+    }));
+    await page.goto('https://suno.com/create?__clerk_handshake=secret-handshake&lang=auto');
 
     const files = await saveCaptchaDiagnostics({
       page,
@@ -53,12 +59,18 @@ test('captures HTML, screenshot, and coordinates for unknown captcha frames', as
     assert.ok((await stat(files.viewportScreenshotPath)).size > 0);
     assert.ok((await stat(files.screenshotPath)).size > 0);
     assert.match(path.basename(files.prefix), /^captcha-after-20s-/);
+    const pageHtml = await readFile(files.htmlPath, 'utf8');
+    assert.doesNotMatch(pageHtml, /secret-handshake/);
+    assert.match(pageHtml, /window\.mode = 'auto'/);
+    assert.match(pageHtml, /href="https:\/\/suno\.com\/next"/);
 
     const manifest = JSON.parse(await readFile(files.jsonPath, 'utf8')) as {
+      url: string;
       reason: string;
       networkEvents: Array<{ responseBody?: string }>;
       frames: Array<{ name: string; htmlPath: string }>;
     };
+    assert.equal(manifest.url, 'https://suno.com/create');
     assert.equal(manifest.reason, 'Captured 20 seconds after clicking Create');
     assert.equal(manifest.networkEvents[0].responseBody, '{"error":600010}');
     assert.ok(manifest.frames.some((frame) => frame.name === 'captcha-frame'));

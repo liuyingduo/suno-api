@@ -2,6 +2,7 @@ import pino from 'pino';
 import { Browser, BrowserContext, chromium, Locator, Page, Request } from 'playwright';
 import path from 'node:path';
 import { YesCaptchaAction, YesCaptchaClient } from '@/lib/yesCaptchaClient';
+import { createMatchingChromiumUserAgent } from '@/lib/browserFingerprint';
 import { sleep } from '@/lib/utils';
 import {
   startCaptchaRequestLoggingAfterClick
@@ -25,7 +26,6 @@ const HCAPTCHA_IMAGE_RE = /^https:\/\/(?:img[a-zA-Z0-9]*\.hcaptcha\.com|hcaptcha
 const INVALID_COOKIE_RE = /[\x00-\x1f\x7f;,"]/;
 interface SunoCaptchaSolverOptions {
   cookies: Record<string, string | undefined>;
-  userAgent: string;
   currentToken?: string;
 }
 
@@ -38,9 +38,10 @@ export class SunoCaptchaSolver {
   public async solve(): Promise<CaptchaResult> {
     logger.info('SunoCaptchaSolver: launching browser');
     const browser = await this.launchBrowser();
-    const context = await this.createContext(browser);
+    const browserUserAgent = createMatchingChromiumUserAgent(browser.version());
+    const context = await this.createContext(browser, browserUserAgent);
     const page = await context.newPage();
-    const debugSession = new SunoCaptchaDebugSession(this.options.userAgent, logger);
+    const debugSession = new SunoCaptchaDebugSession(browserUserAgent, logger);
     debugSession.attach(context, page, GENERATE_URL_PART);
     const abortController = new AbortController();
     let delayedSnapshot: Promise<void> | undefined;
@@ -100,9 +101,9 @@ export class SunoCaptchaSolver {
     });
   }
 
-  private async createContext(browser: Browser): Promise<BrowserContext> {
+  private async createContext(browser: Browser, userAgent: string): Promise<BrowserContext> {
     return browser.newContext({
-      userAgent: this.options.userAgent,
+      userAgent,
       locale: process.env.BROWSER_LOCALE,
       viewport: { width: 1280, height: 800 },
       recordVideo: CAPTCHA_DEBUG_SAVE

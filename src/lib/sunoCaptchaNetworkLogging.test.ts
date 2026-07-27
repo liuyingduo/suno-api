@@ -43,9 +43,11 @@ test('captures Turnstile response bodies and frame navigation', async () => {
     assert.ok(response);
     assert.equal(response.responseHeaders?.['cf-ray'], 'test-ray-id');
     assert.ok(events.some((event) => (
-      event.type === 'frame-navigated' && event.url.includes('/turnstile/test')
+      event.type === 'frame-navigated' && event.url.endsWith('/turnstile/challenge')
     )));
-    assert.ok(messages.some((message) => message.includes('{"error":600010}')));
+    assert.ok(messages.some((message) => (
+      message.includes('response: 200 fetch') && message.endsWith('/turnstile/flow')
+    )));
   } finally {
     await browser.close();
   }

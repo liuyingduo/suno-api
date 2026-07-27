@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { ensureLoaded, getAccountById, pickAccount, updateAccountCookie } from '@/lib/accountStore';
 import { recordRequest } from '@/lib/requestMonitor';
 import { SunoCaptchaSolver } from '@/lib/sunoCaptchaSolver';
+import type { CaptchaBrowserIdentity } from '@/lib/sunoCaptchaTokenCapture';
 import { createBrowserUserAgent } from '@/lib/browserFingerprint';
 
 // sunoApi instance caching
@@ -460,14 +461,35 @@ class SunoApi {
 
     const solver = new SunoCaptchaSolver({
       cookies: this.cookies,
-      userAgent: this.userAgent as string,
       currentToken: this.currentToken
     });
     const result = await solver.solve();
+    this.applyCaptchaBrowserIdentity(result.browserIdentity);
     if (result.authorizationToken) {
       this.currentToken = result.authorizationToken;
     }
     return result.token;
+  }
+
+  private applyCaptchaBrowserIdentity(identity: CaptchaBrowserIdentity): void {
+    this.userAgent = identity.userAgent;
+    const headers = this.client.defaults.headers.common;
+    headers['User-Agent'] = identity.userAgent;
+    this.setOptionalHeader(headers, 'sec-ch-ua', identity.secChUa);
+    this.setOptionalHeader(headers, 'sec-ch-ua-mobile', identity.secChUaMobile);
+    this.setOptionalHeader(headers, 'sec-ch-ua-platform', identity.secChUaPlatform);
+  }
+
+  private setOptionalHeader(
+    headers: Record<string, unknown>,
+    name: string,
+    value?: string
+  ): void {
+    if (value === undefined) {
+      delete headers[name];
+      return;
+    }
+    headers[name] = value;
   }
 
   private createBrowserToken(): string {

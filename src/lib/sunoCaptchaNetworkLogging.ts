@@ -1,4 +1,5 @@
 import { BrowserContext, Page, Request, Response } from 'playwright';
+import { sanitizeDiagnosticUrl } from './captchaDiagnosticSanitizer';
 
 interface CaptchaNetworkLogger {
   info(message: string): void;
@@ -67,7 +68,8 @@ export function attachCaptchaNetworkLogging(
     const event = createResponseEvent(response);
     events.push(event);
     logger.info(
-      `SunoCaptchaSolver response: ${response.status()} ${response.request().resourceType()} ${response.url()}`
+      `SunoCaptchaSolver response: ${response.status()} ${response.request().resourceType()} ` +
+      sanitizeDiagnosticUrl(response.url())
     );
     if (isTurnstileResponseBody(response)) {
       void captureTurnstileResponseDetails(response, event, logger);
@@ -85,11 +87,14 @@ export function attachCaptchaNetworkLogging(
   const attachFrameLogging = (page: Page) => {
     page.on('framenavigated', (frame) => {
       if (!isTurnstileUrl(frame.url())) return;
+      const parentFrame = frame.parentFrame();
       const event: CaptchaNetworkEvent = {
         timestamp: new Date().toISOString(),
         type: 'frame-navigated',
-        url: frame.url(),
-        parentUrl: frame.parentFrame()?.url()
+        url: sanitizeDiagnosticUrl(frame.url()),
+        parentUrl: parentFrame
+          ? sanitizeDiagnosticUrl(parentFrame.url())
+          : undefined
       };
       events.push(event);
       logger.info(`SunoCaptchaSolver Turnstile frame navigated: ${event.url}`);
@@ -116,7 +121,8 @@ export async function startCaptchaRequestLoggingAfterClick(
       return;
     }
     logger.info(
-      `SunoCaptchaSolver after-click response: ${response.status()} ${response.request().resourceType()} ${response.url()}`
+      `SunoCaptchaSolver after-click response: ${response.status()} ${response.request().resourceType()} ` +
+      sanitizeDiagnosticUrl(response.url())
     );
   };
   const onRequestFailed = (request: Request) => {
@@ -139,7 +145,7 @@ export async function startCaptchaRequestLoggingAfterClick(
 }
 
 function formatRequest(request: Request): string {
-  return `${request.method()} ${request.resourceType()} ${request.url()}`;
+  return `${request.method()} ${request.resourceType()} ${sanitizeDiagnosticUrl(request.url())}`;
 }
 
 function formatRequestFailure(request: Request): string {
@@ -152,7 +158,7 @@ function createRequestEvent(request: Request): CaptchaNetworkEvent {
     type: 'request',
     method: request.method(),
     resourceType: request.resourceType(),
-    url: request.url()
+    url: sanitizeDiagnosticUrl(request.url())
   };
 }
 
@@ -162,7 +168,7 @@ function createResponseEvent(response: Response): CaptchaNetworkEvent {
     type: 'response',
     status: response.status(),
     resourceType: response.request().resourceType(),
-    url: response.url()
+    url: sanitizeDiagnosticUrl(response.url())
   };
 }
 
@@ -192,7 +198,6 @@ async function captureTurnstileResponseDetails(
     const headers = await response.allHeaders();
     event.responseHeaders = selectDiagnosticHeaders(headers);
     event.responseBody = await response.text();
-    logger.info(`SunoCaptchaSolver Turnstile response body: ${response.url()} ${event.responseBody}`);
   } catch (error) {
     logger.warn(
       `SunoCaptchaSolver failed to read Turnstile response body: ` +
