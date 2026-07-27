@@ -13,7 +13,7 @@ import { saveCaptchaChallengeSnapshot } from '@/lib/captchaChallengeSnapshot';
 import { CREATE_SONG_BUTTON_SELECTOR, PROMPT_TEXTAREA_SELECTOR } from '@/lib/sunoCreateSelectors';
 import { CaptchaResult, extractCaptchaResult, MissingCaptchaTokenError } from '@/lib/sunoCaptchaTokenCapture';
 import { saveCaptchaSnapshotAfterDelay } from '@/lib/sunoCaptchaSnapshotTimer';
-import { solveTurnstileChallenges } from '@/lib/sunoTurnstileChallenge';
+import { installTurnstileChallengeHook, solveTurnstileChallenges } from '@/lib/sunoTurnstileChallenge';
 
 const logger = pino();
 const SUNO_CREATE_URL = 'https://suno.com/create';
@@ -41,6 +41,7 @@ export class SunoCaptchaSolver {
     const browserUserAgent = createMatchingChromiumUserAgent(browser.version());
     const context = await this.createContext(browser, browserUserAgent);
     const page = await context.newPage();
+    await installTurnstileChallengeHook(page);
     const debugSession = new SunoCaptchaDebugSession(browserUserAgent, logger);
     debugSession.attach(context, page, GENERATE_URL_PART);
     const abortController = new AbortController();
@@ -258,12 +259,13 @@ export class SunoCaptchaSolver {
 
   private async waitForChallengeHandlers(page: Page, signal: AbortSignal): Promise<never> {
     const results = await Promise.allSettled([
-      solveTurnstileChallenges(page, signal, (attempt, retry) => {
-        logger.info(
-          `SunoCaptchaSolver: clicked Cloudflare Turnstile checkbox ` +
-          `(attempt ${attempt}${retry ? ', failure retry' : ''})`
-        );
-      }),
+      solveTurnstileChallenges(
+        page,
+        signal,
+        (challenge, challengeSignal) =>
+          this.yesCaptcha.solveTurnstile(challenge.websiteURL, challenge.websiteKey, challengeSignal),
+        () => logger.info('SunoCaptchaSolver: delivered YesCaptcha Turnstile token to page')
+      ),
       this.solveChallenges(page, signal)
     ]);
     const errors = results

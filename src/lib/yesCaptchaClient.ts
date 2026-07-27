@@ -53,11 +53,35 @@ interface YesCaptchaSolution {
 export class YesCaptchaClient {
   private readonly client: AxiosInstance;
 
-  constructor(private readonly clientKey: string) {
+  constructor(
+    private readonly clientKey: string,
+    client: AxiosInstance = axios.create({ timeout: 30_000 })
+  ) {
     if (!clientKey) {
-      throw new Error('YESCAPTCHA_KEY is required to solve hCaptcha');
+      throw new Error('YESCAPTCHA_KEY is required to solve captcha challenges');
     }
-    this.client = axios.create({ timeout: 30_000 });
+    this.client = client;
+  }
+
+  public async solveTurnstile(
+    websiteURL: string,
+    websiteKey: string,
+    signal?: AbortSignal
+  ): Promise<string> {
+    logger.info('YesCaptchaClient: creating TurnstileTaskProxyless task');
+    const created = await this.createTask({
+      type: 'TurnstileTaskProxyless',
+      websiteURL,
+      websiteKey
+    }, signal);
+    const result = created.status === 'ready'
+      ? created
+      : await this.waitForResult(created.taskId, signal);
+    const token = result.solution?.token?.trim();
+    if (!token) {
+      throw new Error('YesCaptcha returned no Turnstile token');
+    }
+    return token;
   }
 
   public async solveHcaptchaByImages(
@@ -99,11 +123,15 @@ export class YesCaptchaClient {
     return actions;
   }
 
-  private async createTask(task: Record<string, unknown>): Promise<CreateTaskResponse> {
-    const response = await this.client.post<CreateTaskResponse>(CREATE_TASK_URL, {
-      clientKey: this.clientKey,
-      task
-    });
+  private async createTask(
+    task: Record<string, unknown>,
+    signal?: AbortSignal
+  ): Promise<CreateTaskResponse> {
+    const response = await this.client.post<CreateTaskResponse>(
+      CREATE_TASK_URL,
+      { clientKey: this.clientKey, task },
+      { signal }
+    );
     this.assertSuccess(response.data);
     if (response.data.status !== 'ready' && !response.data.taskId) {
       throw new Error('YesCaptcha createTask did not return taskId');
@@ -111,17 +139,18 @@ export class YesCaptchaClient {
     return response.data;
   }
 
-  private async waitForResult(taskId?: string): Promise<TaskResultResponse> {
+  private async waitForResult(taskId?: string, signal?: AbortSignal): Promise<TaskResultResponse> {
     if (!taskId) {
       throw new Error('YesCaptcha taskId is required');
     }
     const startTime = Date.now();
     while (Date.now() - startTime < DEFAULT_TIMEOUT_MS) {
-      await this.delay(DEFAULT_INTERVAL_MS);
-      const response = await this.client.post<TaskResultResponse>(GET_TASK_RESULT_URL, {
-        clientKey: this.clientKey,
-        taskId
-      });
+      await this.delay(DEFAULT_INTERVAL_MS, signal);
+      const response = await this.client.post<TaskResultResponse>(
+        GET_TASK_RESULT_URL,
+        { clientKey: this.clientKey, taskId },
+        { signal }
+      );
       this.assertSuccess(response.data);
       if (response.data.status === 'ready') {
         return response.data;
@@ -212,7 +241,21 @@ export class YesCaptchaClient {
     );
   }
 
-  private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+  private delay(ms: number, signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(new Error('YesCaptcha task aborted'));
+        return;
+      }
+      const onAbort = () => {
+        clearTimeout(timeout);
+        reject(new Error('YesCaptcha task aborted'));
+      };
+      const timeout = setTimeout(() => {
+        signal?.removeEventListener('abort', onAbort);
+        resolve();
+      }, ms);
+      signal?.addEventListener('abort', onAbort, { once: true });
+    });
   }
 }
