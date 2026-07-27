@@ -6,7 +6,12 @@ import { randomUUID } from 'node:crypto';
 import { ensureLoaded, getAccountById, pickAccount, updateAccountCookie } from '@/lib/accountStore';
 import { recordRequest } from '@/lib/requestMonitor';
 import { SunoCaptchaSolver } from '@/lib/sunoCaptchaSolver';
-import type { CaptchaBrowserIdentity } from '@/lib/sunoCaptchaTokenCapture';
+import {
+  CaptchaBrowserIdentity,
+  SunoGenerateClip,
+  SunoGeneratePayload,
+  validateSunoGenerateClips
+} from '@/lib/sunoCaptchaGenerateCapture';
 import { createBrowserUserAgent } from '@/lib/browserFingerprint';
 
 // sunoApi instance caching
@@ -440,7 +445,9 @@ class SunoApi {
     return tokenResponse.data.session_id;
   }
 
-  private async getCaptchaToken(browserToken: string): Promise<string | null> {
+  private async getPrecheckedCaptchaToken(
+    browserToken: string
+  ): Promise<string | null | undefined> {
     try {
       const checkResp = await this.client.post(
         `${SunoApi.BASE_URL}/api/c/check`,
@@ -449,7 +456,7 @@ class SunoApi {
       );
       const checkToken = checkResp.data?.token ?? null;
       if (checkToken) {
-        logger.info('Pre-check captcha token: ' + checkToken);
+        logger.info('Generation captcha pre-check returned a token');
         return checkToken;
       }
       if (!checkResp.data?.required) {
@@ -458,17 +465,47 @@ class SunoApi {
     } catch {
       logger.warn('Pre-check failed, trying browser captcha flow');
     }
+    return undefined;
+  }
 
+  private async submitGenerateRequest(
+    payload: SunoGeneratePayload
+  ): Promise<SunoGenerateClip[]> {
+    const browserToken = this.createBrowserToken();
+    const captchaToken = await this.getPrecheckedCaptchaToken(browserToken);
+    if (captchaToken === undefined) {
+      return this.submitGenerateRequestInBrowser(payload);
+    }
+
+    const response = await this.client.post(
+      `${SunoApi.BASE_URL}/api/generate/v2-web/`,
+      { ...payload, token: captchaToken },
+      {
+        timeout: 10000,
+        headers: { 'browser-token': browserToken }
+      }
+    );
+    return validateSunoGenerateClips(
+      response.data,
+      response.status,
+      response.status >= 200 && response.status < 300,
+      'Suno Generate request'
+    );
+  }
+
+  private async submitGenerateRequestInBrowser(
+    payload: SunoGeneratePayload
+  ): Promise<SunoGenerateClip[]> {
     const solver = new SunoCaptchaSolver({
       cookies: this.cookies,
       currentToken: this.currentToken
     });
-    const result = await solver.solve();
+    const result = await solver.generate(payload);
     this.applyCaptchaBrowserIdentity(result.browserIdentity);
     if (result.authorizationToken) {
       this.currentToken = result.authorizationToken;
     }
-    return result.token;
+    return result.clips;
   }
 
   private applyCaptchaBrowserIdentity(identity: CaptchaBrowserIdentity): void {
@@ -945,8 +982,6 @@ class SunoApi {
     options?: SunoGenerateOptions
   ): Promise<AudioInfo[]> {
     await this.keepAlive();
-    const browserToken = this.createBrowserToken();
-    const captchaToken = await this.getCaptchaToken(browserToken);
     const payload: any = {
       make_instrumental: make_instrumental,
       mv: model || DEFAULT_MODEL,
@@ -956,7 +991,7 @@ class SunoApi {
       continue_clip_id: continue_clip_id,
       continued_aligned_prompt: null,
       task: task,
-      token: captchaToken,
+      token: null,
       token_provider: null,
       transaction_uuid: randomUUID(),
       user_uploaded_images_b64: null,
@@ -998,35 +1033,8 @@ class SunoApi {
     ) {
       payload.gpt_description_prompt = prompt;
     }
-    logger.info(
-      'generateSongs payload:\n' +
-        JSON.stringify(
-          {
-            prompt: prompt,
-            isCustom: isCustom,
-            tags: tags,
-            title: title,
-            make_instrumental: make_instrumental,
-            wait_audio: wait_audio,
-            negative_tags: negative_tags,
-            payload: payload
-          },
-          null,
-          2
-        )
-    );
-    const response = await this.client.post(
-      `${SunoApi.BASE_URL}/api/generate/v2-web/`,
-      payload,
-      {
-        timeout: 10000, // 10 seconds timeout
-        headers: { 'browser-token': browserToken }
-      }
-    );
-    if (response.status !== 200) {
-      throw new Error('Error response:' + response.statusText);
-    }
-    const songIds = response.data.clips.map((audio: any) => audio.id);
+    const clips = await this.submitGenerateRequest(payload);
+    const songIds = clips.map((audio) => audio.id);
     //Want to wait for music file generation
     if (wait_audio) {
       const startTime = Date.now();
@@ -1047,7 +1055,7 @@ class SunoApi {
       }
       return lastResponse;
     } else {
-      return response.data.clips.map((audio: any) => ({
+      return clips.map((audio: any) => ({
         id: audio.id,
         title: audio.title,
         image_url: audio.image_url,

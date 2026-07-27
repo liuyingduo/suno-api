@@ -11,14 +11,18 @@ import { SunoCaptchaDebugSession } from '@/lib/sunoCaptchaDebugSession';
 import { closeKnownPopups } from '@/lib/sunoPopupHandler';
 import { saveCaptchaChallengeSnapshot } from '@/lib/captchaChallengeSnapshot';
 import { CREATE_SONG_BUTTON_SELECTOR, PROMPT_TEXTAREA_SELECTOR } from '@/lib/sunoCreateSelectors';
-import { CaptchaResult, extractCaptchaResult, MissingCaptchaTokenError } from '@/lib/sunoCaptchaTokenCapture';
+import {
+  CaptchaGenerateCapture,
+  CaptchaGenerationResult,
+  installCaptchaGenerateCapture,
+  SUNO_GENERATE_URL_PART,
+  SunoGeneratePayload
+} from '@/lib/sunoCaptchaGenerateCapture';
 import { saveCaptchaSnapshotAfterDelay } from '@/lib/sunoCaptchaSnapshotTimer';
 import { installTurnstileChallengeHook, solveTurnstileChallenges } from '@/lib/sunoTurnstileChallenge';
 
 const logger = pino();
 const SUNO_CREATE_URL = 'https://suno.com/create';
-const GENERATE_URL_PART = '/api/generate/v2-web/';
-const CAPTCHA_TIMEOUT_MS = 180_000;
 const CAPTCHA_DEBUG_SAVE = process.env.CAPTCHA_DEBUG_SAVE === 'true';
 const CAPTCHA_CHALLENGE_STABLE_WAIT_MS = 10_000;
 const RECORD_VIDEO_DIR = path.join(process.cwd(), 'logs', 'captcha-videos');
@@ -31,11 +35,11 @@ interface SunoCaptchaSolverOptions {
 
 export class SunoCaptchaSolver {
   private readonly yesCaptcha = new YesCaptchaClient(process.env.YESCAPTCHA_KEY ?? '');
-  private tokenCaptured = false;
+  private generationSucceeded = false;
 
   constructor(private readonly options: SunoCaptchaSolverOptions) {}
 
-  public async solve(): Promise<CaptchaResult> {
+  public async generate(payload: SunoGeneratePayload): Promise<CaptchaGenerationResult> {
     logger.info('SunoCaptchaSolver: launching browser');
     const browser = await this.launchBrowser();
     const browserUserAgent = createMatchingChromiumUserAgent(browser.version());
@@ -43,13 +47,18 @@ export class SunoCaptchaSolver {
     const page = await context.newPage();
     await installTurnstileChallengeHook(page);
     const debugSession = new SunoCaptchaDebugSession(browserUserAgent, logger);
-    debugSession.attach(context, page, GENERATE_URL_PART);
+    debugSession.attach(context, page, SUNO_GENERATE_URL_PART);
     const abortController = new AbortController();
+    let generateCapture: CaptchaGenerateCapture | undefined;
     let delayedSnapshot: Promise<void> | undefined;
     let failure: unknown;
 
     try {
-      const tokenPromise = this.captureGenerateToken(page, abortController);
+      generateCapture = await installCaptchaGenerateCapture(
+        page,
+        payload,
+        logger
+      );
       logger.info(`SunoCaptchaSolver: navigating to ${SUNO_CREATE_URL}`);
       await page.goto(SUNO_CREATE_URL, {
         referer: 'https://www.google.com/',
@@ -64,25 +73,30 @@ export class SunoCaptchaSolver {
       }
       await Promise.race([
         this.waitForChallengeHandlers(page, abortController.signal),
-        tokenPromise
+        generateCapture.result
       ]);
-      logger.info('SunoCaptchaSolver: waiting for generate token capture');
-      return await tokenPromise;
+      logger.info('SunoCaptchaSolver: waiting for browser Generate response');
+      const result = await generateCapture.result;
+      this.generationSucceeded = true;
+      return result;
     } catch (error) {
       failure = error;
       throw error;
     } finally {
-      const diagnosticName = failure ? 'captcha-failure' : 'captcha-success';
+      const diagnosticName = failure
+        ? 'captcha-generate-failure'
+        : 'captcha-generate-success';
       const files = CAPTCHA_DEBUG_SAVE
         ? await debugSession.save(page, failure, diagnosticName)
         : undefined;
       abortController.abort();
+      generateCapture?.cancel();
       await delayedSnapshot;
       const videoPath = CAPTCHA_DEBUG_SAVE
         ? await debugSession.closeBrowserWithVideoLog(page, browser)
         : undefined;
       if (!CAPTCHA_DEBUG_SAVE) await browser.close();
-      if (CAPTCHA_DEBUG_SAVE && !this.tokenCaptured) {
+      if (CAPTCHA_DEBUG_SAVE && !this.generationSucceeded) {
         await debugSession.notifyFailure(files, failure, videoPath);
       }
       logger.info('SunoCaptchaSolver: browser closed');
@@ -193,7 +207,12 @@ export class SunoCaptchaSolver {
     await page.waitForTimeout(5_000);
     await this.logCreateButtonDiagnostics(createButton);
     logger.info('SunoCaptchaSolver: clicking Create song button');
-    await startCaptchaRequestLoggingAfterClick(page, GENERATE_URL_PART, logger, () => createButton.click());
+    await startCaptchaRequestLoggingAfterClick(
+      page,
+      SUNO_GENERATE_URL_PART,
+      logger,
+      () => createButton.click()
+    );
   }
 
   private async logCreateButtonDiagnostics(createButton: Locator): Promise<void> {
@@ -220,41 +239,6 @@ export class SunoCaptchaSolver {
       })()
     }));
     logger.info(`SunoCaptchaSolver: Create song button diagnostics ${JSON.stringify(diagnostics)}`);
-  }
-
-  private captureGenerateToken(page: Page, abortController: AbortController): Promise<CaptchaResult> {
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('Timed out waiting for captcha token from Suno generate request'));
-      }, CAPTCHA_TIMEOUT_MS);
-
-      page.route(`**${GENERATE_URL_PART}**`, async (route) => {
-        try {
-          const request = route.request();
-          logger.info('SunoCaptchaSolver: captured Suno generate request');
-          let result: CaptchaResult;
-          try {
-            result = extractCaptchaResult(request);
-          } catch (error) {
-            if (!(error instanceof MissingCaptchaTokenError)) throw error;
-            logger.warn(`SunoCaptchaSolver: ${this.formatError(error)}`);
-            await route.abort();
-            return;
-          }
-          await route.abort();
-          clearTimeout(timeout);
-          abortController.abort();
-          this.tokenCaptured = true;
-          resolve(result);
-        } catch (error) {
-          clearTimeout(timeout);
-          reject(error);
-        }
-      }).catch((error) => {
-        clearTimeout(timeout);
-        reject(error);
-      });
-    });
   }
 
   private async waitForChallengeHandlers(page: Page, signal: AbortSignal): Promise<never> {
