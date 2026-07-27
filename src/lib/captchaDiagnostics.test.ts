@@ -30,6 +30,13 @@ test('captures HTML, screenshot, and coordinates for unknown captcha frames', as
       page,
       userAgent: 'diagnostic-test',
       consoleMessages: [],
+      networkEvents: [{
+        timestamp: '2026-07-27T00:00:00.000Z',
+        type: 'response',
+        url: 'https://challenges.cloudflare.com/flow/test',
+        status: 200,
+        responseBody: '{"error":600010}'
+      }],
       error: new Error('Timed out waiting for captcha token'),
       namePrefix: 'captcha-after-20s',
       reason: 'Captured 20 seconds after clicking Create',
@@ -49,9 +56,11 @@ test('captures HTML, screenshot, and coordinates for unknown captcha frames', as
 
     const manifest = JSON.parse(await readFile(files.jsonPath, 'utf8')) as {
       reason: string;
+      networkEvents: Array<{ responseBody?: string }>;
       frames: Array<{ name: string; htmlPath: string }>;
     };
     assert.equal(manifest.reason, 'Captured 20 seconds after clicking Create');
+    assert.equal(manifest.networkEvents[0].responseBody, '{"error":600010}');
     assert.ok(manifest.frames.some((frame) => frame.name === 'captcha-frame'));
   } finally {
     await browser.close();

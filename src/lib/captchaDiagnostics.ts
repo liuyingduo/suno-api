@@ -1,6 +1,7 @@
 import { ConsoleMessage, Frame, Page } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import type { CaptchaNetworkEvent } from './sunoCaptchaNetworkLogging';
 
 const DIAGNOSTIC_DIR = path.join(process.cwd(), 'logs', 'captcha-diagnostics');
 
@@ -28,6 +29,7 @@ interface CaptchaDiagnosticsInput {
   page: Page;
   userAgent: string;
   consoleMessages: string[];
+  networkEvents?: CaptchaNetworkEvent[];
   error?: unknown;
   namePrefix?: string;
   outputDirectory?: string;
@@ -35,7 +37,11 @@ interface CaptchaDiagnosticsInput {
 }
 
 export function formatConsoleMessage(message: ConsoleMessage): string {
-  return `[${message.type()}] ${message.text()}`;
+  const location = message.location();
+  const source = location.url
+    ? ` ${location.url}:${location.lineNumber}:${location.columnNumber}`
+    : '';
+  return `[${message.type()}]${source} ${message.text()}`;
 }
 
 export async function saveCaptchaDiagnostics(
@@ -72,6 +78,7 @@ export async function saveCaptchaDiagnostics(
       error: serializeError(input.error),
       fingerprint,
       consoleMessages: input.consoleMessages,
+      networkEvents: input.networkEvents ?? [],
       frames
     }, null, 2), 'utf8')
   ]);
@@ -163,19 +170,62 @@ function serializeErrorMessage(error: unknown): string {
 }
 
 async function readBrowserFingerprint(page: Page): Promise<Record<string, unknown>> {
-  return page.evaluate(() => ({
-    userAgent: navigator.userAgent,
-    platform: navigator.platform,
-    webdriver: navigator.webdriver,
-    languages: navigator.languages,
-    language: navigator.language,
-    hardwareConcurrency: navigator.hardwareConcurrency,
-    deviceMemory: 'deviceMemory' in navigator ? navigator.deviceMemory : undefined,
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    viewport: {
-      width: window.innerWidth,
-      height: window.innerHeight,
-      devicePixelRatio: window.devicePixelRatio
-    }
-  }));
+  const browserVersion = page.context().browser()?.version();
+  const pageFingerprint = await page.evaluate(async () => {
+    const navigatorWithHints = navigator as Navigator & {
+      userAgentData?: {
+        brands: Array<{ brand: string; version: string }>;
+        mobile: boolean;
+        platform: string;
+        getHighEntropyValues?: (hints: string[]) => Promise<Record<string, unknown>>;
+      };
+    };
+    const userAgentData = navigatorWithHints.userAgentData;
+    const highEntropyValues = await userAgentData?.getHighEntropyValues?.([
+      'architecture',
+      'bitness',
+      'fullVersionList',
+      'model',
+      'platformVersion',
+      'wow64'
+    ]);
+    const canvas = document.createElement('canvas');
+    const webgl = canvas.getContext('webgl');
+    const debugInfo = webgl?.getExtension('WEBGL_debug_renderer_info');
+
+    return {
+      userAgent: navigator.userAgent,
+      userAgentData: userAgentData ? {
+        brands: userAgentData.brands,
+        mobile: userAgentData.mobile,
+        platform: userAgentData.platform,
+        highEntropyValues
+      } : undefined,
+      platform: navigator.platform,
+      webdriver: navigator.webdriver,
+      languages: navigator.languages,
+      language: navigator.language,
+      hardwareConcurrency: navigator.hardwareConcurrency,
+      deviceMemory: 'deviceMemory' in navigator ? navigator.deviceMemory : undefined,
+      cookieEnabled: navigator.cookieEnabled,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      screen: {
+        width: screen.width,
+        height: screen.height,
+        availWidth: screen.availWidth,
+        availHeight: screen.availHeight,
+        colorDepth: screen.colorDepth
+      },
+      viewport: {
+        width: window.innerWidth,
+        height: window.innerHeight,
+        devicePixelRatio: window.devicePixelRatio
+      },
+      webgl: debugInfo && webgl ? {
+        vendor: webgl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL),
+        renderer: webgl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL)
+      } : undefined
+    };
+  });
+  return { browserVersion, ...pageFingerprint };
 }
